@@ -810,12 +810,12 @@ void VulkanEngine::init_default_data()
 
 void VulkanEngine::init_renderables()
 {
-    std::string scenePath = { "..\\..\\assets\\structure.glb" };
+    std::string scenePath = { "..\\..\\assets\\bistro.glb" };
     auto sceneFile = vkutil::load_gltf(this, scenePath);
 
     assert(sceneFile.has_value());
 
-    _loadedScenes["structure"] = *sceneFile;
+    _loadedScenes["bistro"] = *sceneFile;
 }
 
 void VulkanEngine::create_swapchain(uint32_t width, uint32_t height)
@@ -1182,7 +1182,7 @@ void VulkanEngine::update_scene()
 
     _sceneData.proj[1][1] *= 1; //might need to change to -1
  
-    _loadedScenes["structure"]->Draw(glm::mat4{ 1.0f }, _mainDrawContext);
+    _loadedScenes["bistro"]->Draw(glm::mat4{ 1.0f }, _mainDrawContext);
 
     auto end = std::chrono::system_clock::now();
 
@@ -1320,7 +1320,7 @@ MaterialInstance GLTFMetallic_Roughness::write_material(VkDevice device, Materia
     else {
         matData.pipeline = &opaquePipeline;
     }
-        //matData.pipeline = &opaquePipeline; // DEBUGGGING PURPOSES
+        matData.pipeline = &opaquePipeline; // DEBUGGGING PURPOSES
 
     matData.materialSet = descriptorAllocator.allocate(device, materialLayout);
 

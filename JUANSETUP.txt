@@ -1,0 +1,48 @@
+# START ASSETS FOLDER DOWNLOAD #
+https://drive.google.com/drive/folders/1E6EIFbBrb6o7wJoxWUANeckHJCKVS_An?usp=sharing
+
+# GET VULKAN STUFF #
+sudo apt install vulkan-tools
+sudo apt install libvulkan-dev
+sudo apt install vulkan-validationlayers-dev spirv-tools
+wget -qO- https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo tee /etc/apt/trusted.gpg.d/lunarg.asc
+sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-jammy.list http://packages.lunarg.com/vulkan/lunarg-vulkan-jammy.list
+sudo apt update
+sudo apt install vulkan-sdk
+
+# DOUBLE CHECK VULKAN WORKS #
+vkcube
+vulkaninfo --summary
+
+# GET SDL2 #
+sudo apt-get install libsdl2-dev
+
+# COMPILE SHADERS #
+download glslc at https://github.com/google/shaderc/blob/main/downloads.md
+copy to /usr/local/bin
+
+(from ambf_refactor directory)
+glslc shaders/pbr.frag -o shaders/pbr.frag.spv
+glslc shaders/pbr.vert -o shaders/pbr.vert.spv
+glslc shaders/post_process.vert -o shaders/post_process.vert.spv
+glslc shaders/post_process.frag -o shaders/post_process.frag.spv
+
+# BUILD FMT AND FASTGLTF #
+(from ambf_refactor directory)
+mkdir lib/fmt/build
+cd lib/fmt/build
+cmake ..
+make
+
+(from ambf_refactor directory)
+mkdir lib/fastgltf/build
+cd lib/fastgltf/build
+cmake ..
+make
+
+# GET ASSETS FOLDER #
+unzip and move assets folder into ambf_refactor directory
+
+# RUN ENGINE #
+(from ambf_refactor directory)
+make run
