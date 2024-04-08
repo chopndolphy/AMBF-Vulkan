@@ -22,6 +22,8 @@ download glslc at https://github.com/google/shaderc/blob/main/downloads.md
 copy to /usr/local/bin
 
 (from ambf_refactor directory)
+glslc shaders/gradient_color.comp -o shaders/gradient_color.comp.spv
+glslc shaders/sky.comp -o shaders/sky.comp.spv
 glslc shaders/pbr.frag -o shaders/pbr.frag.spv
 glslc shaders/pbr.vert -o shaders/pbr.vert.spv
 glslc shaders/post_process.vert -o shaders/post_process.vert.spv
