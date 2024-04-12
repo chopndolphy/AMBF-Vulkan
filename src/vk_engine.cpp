@@ -11,8 +11,10 @@
 #define VMA_IMPLEMENTATION
 #include <vk_mem_alloc.h>
 
-#include <SDL.h>
-#include <SDL_vulkan.h>
+#include <vulkan/vulkan_core.h>
+
+#include <SDL2/SDL.h>
+#include <SDL2/SDL_vulkan.h>
  
 #include <VkBootstrap.h>
 
@@ -25,14 +27,14 @@
 #include <array>
 #include <iostream>
 #include <fstream>
-#include "SDL_mouse.h"
+#include <SDL2/SDL_mouse.h>
 
 VulkanEngine* loadedEngine = nullptr;
 
 #ifdef NDEBUG
 constexpr bool bUseValidationLayers = false;
 #else
-constexpr bool bUseValidationLayers = true;
+constexpr bool bUseValidationLayers = false;
 #endif
 
 
@@ -56,8 +58,8 @@ void VulkanEngine::init()
  
     _window = SDL_CreateWindow(
         "Vulkan Engine",
-        SDL_WINDOWPOS_UNDEFINED,
-        SDL_WINDOWPOS_UNDEFINED,
+        SDL_WINDOWPOS_CENTERED,
+        SDL_WINDOWPOS_CENTERED,
         _windowExtent.width,
         _windowExtent.height,
         window_flags);
@@ -381,21 +383,31 @@ GPUMeshBuffers VulkanEngine::uploadMesh(std::span<uint32_t> indices, std::span<V
 
 void VulkanEngine::init_vulkan()
 {
+    // init_instance();
+    // init_debug_messenger();
+    // init_surface();
+    // init_physical_device();
+    // init_logical_device();
     vkb::InstanceBuilder builder;
 
     auto inst_ret = builder
+        .set_engine_name("AMBF")
         .set_app_name("Vulkan Application")
         .request_validation_layers(bUseValidationLayers)
         .use_default_debug_messenger()
         .require_api_version(1, 3, 0)
         .build();
-
+    if (!inst_ret) {
+        std::cout << inst_ret.error().message() << "\n";
+    }
     vkb::Instance vkb_inst = inst_ret.value();
 
     _instance = vkb_inst.instance;
     _debug_messenger = vkb_inst.debug_messenger;
 
-    SDL_Vulkan_CreateSurface(_window, _instance, &_surface);
+    if (!SDL_Vulkan_CreateSurface(_window, _instance, &_surface)) {
+        std::cout << "failed to create SDL_Vulkan surface" << std::endl;
+    }
 
     VkPhysicalDeviceVulkan13Features features13{};
     features13.dynamicRendering = true;
@@ -410,18 +422,24 @@ void VulkanEngine::init_vulkan()
     features10.sampleRateShading = true;
 
     vkb::PhysicalDeviceSelector selector{ vkb_inst };
-    vkb::PhysicalDevice physicalDevice = selector
-        .set_minimum_version(1, 3)
-        .set_required_features_13(features13)
-        .set_required_features_12(features12)
-        .set_required_features(features10)
-        .set_surface(_surface)
-        .select()
-        .value();
+    selector.set_minimum_version(1, 3);
+    selector.set_required_features_13(features13);
+    selector.set_required_features_12(features12);
+    selector.set_required_features(features10);
+    selector.set_surface(_surface);
+    auto phys_device_ret = selector.select();
+    if (!phys_device_ret) {
+        std::cout << phys_device_ret.error().message() << "\n";
+    }
+    vkb::PhysicalDevice physicalDevice = phys_device_ret.value();
 
     vkb::DeviceBuilder deviceBuilder{ physicalDevice };
+    auto device_ret = deviceBuilder.build();
+    if (!device_ret) {
+        std::cout << device_ret.error().message() << "\n";
+    }
 
-    vkb::Device vkbDevice = deviceBuilder.build().value();
+    vkb::Device vkbDevice = device_ret.value();
 
     _device = vkbDevice.device;
     _chosenGPU = physicalDevice.physical_device; 
@@ -437,6 +455,68 @@ void VulkanEngine::init_vulkan()
     allocatorInfo.instance = _instance;
     allocatorInfo.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
     vmaCreateAllocator(&allocatorInfo, &_allocator); 
+}
+void VulkanEngine::init_instance()
+{
+    const std::vector<const char*> validationLayers = {
+        "VK_LAYER_KHRONOS_validation"
+    };
+    if (bUseValidationLayers && !vkutil::check_validation_layer_support(validationLayers)) {
+        throw std::runtime_error("validation layers requested, but not available!");
+    }
+    VkApplicationInfo appInfo{};
+    appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+    appInfo.pApplicationName = "Vulkan Application";
+    appInfo.applicationVersion = VK_MAKE_API_VERSION(1, 0, 0, 0);
+    appInfo.pEngineName = "AMBF";
+    appInfo.engineVersion = VK_MAKE_API_VERSION(3, 0, 0, 0);
+    appInfo.apiVersion = VK_API_VERSION_1_3;
+
+    VkInstanceCreateInfo createInfo{};
+    createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+    createInfo.pApplicationInfo = &appInfo;
+
+    auto extensions = vkutil::get_required_extensions(_window, bUseValidationLayers);
+    createInfo.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
+    createInfo.ppEnabledExtensionNames = extensions.data();
+
+    VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo{};
+    if (bUseValidationLayers)
+    {
+        createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
+        createInfo.ppEnabledLayerNames = validationLayers.data();
+
+        debugCreateInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+        debugCreateInfo.messageSeverity =
+            VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
+            VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+            VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+        debugCreateInfo.messageType =
+            VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
+            VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+            VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+        debugCreateInfo.pfnUserCallback = debugCallback;
+        
+        createInfo.pNext = (VkDebugUtilsMessengerCreateInfoEXT*) &debugCreateInfo;
+    }
+    else
+    {
+        createInfo.enabledLayerCount = 0;
+        createInfo.pNext = nullptr;
+    }
+    VK_CHECK(vkCreateInstance(&createInfo, nullptr, &_instance));
+}
+void VulkanEngine::init_debug_messenger()
+{
+}
+void VulkanEngine::init_surface()
+{
+}
+void VulkanEngine::init_physical_device()
+{
+}
+void VulkanEngine::init_logical_device()
+{
 }
 void VulkanEngine::init_swapchain()
 { 
@@ -1190,6 +1270,13 @@ void VulkanEngine::update_scene()
     _stats.scene_update_time = elapsed.count() / 1000.0f;
 }
 
+VKAPI_ATTR VkBool32 VKAPI_CALL VulkanEngine::debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageType, const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData, void *pUserData)
+{
+    std::cerr << "validation layer: " << pCallbackData->pMessage << std::endl;
+
+    return VK_FALSE;
+}
+
 void VulkanEngine::init_post_process_pipelines()
 {
     VkShaderModule postFragShader; 
@@ -1395,4 +1482,43 @@ bool vkutil::is_visible(const RenderObject& obj, const glm::mat4& viewProj)
     else {
         return true;
     }
+}
+
+bool vkutil::check_validation_layer_support(const std::vector<const char*> &validationLayers)
+{
+    uint32_t layerCount;
+        vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
+
+        std::vector<VkLayerProperties> availableLayers(layerCount);
+        vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data());
+
+        for (const char* layerName : validationLayers) {
+            bool layerFound = false;
+
+            for (const auto& layerProperties : availableLayers) {
+                if (strcmp(layerName, layerProperties.layerName) == 0) {
+                    layerFound = true;
+                    break;
+                }
+            }
+
+            if (!layerFound) {
+                return false;
+            }
+        }
+
+        return true;
+}
+
+std::vector<const char *> vkutil::get_required_extensions(SDL_Window* window, bool enableValidationLayers)
+{
+    uint32_t sdlExtensionCount = 0;
+    const char** sdlExtensions;
+    SDL_Vulkan_GetInstanceExtensions(window, &sdlExtensionCount, sdlExtensions);  
+    std::vector<const char*> extensions(sdlExtensions, sdlExtensions + sdlExtensionCount);
+    if (enableValidationLayers) {
+        extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+    }
+
+    return extensions;
 }

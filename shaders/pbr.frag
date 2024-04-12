@@ -1,6 +1,5 @@
 #version 450
 
-#extension GL_KHR_vulkan_glsl : enable
 #extension GL_GOOGLE_include_directive : require
 #include "input_structures.glsl"
 

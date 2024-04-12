@@ -4,7 +4,7 @@ BUILD = build
 INCLUDE = include
 LIB = lib
 
-ALL_INCLUDES = -I./$(LIB) -I./$(INCLUDE) -I./$(FASTGLTF)/include/ -I./$(FASTGLTF)/deps/simdjson/ -I./$(FMT)/include/ -I./$(GLM) -I./$(IMGUI) -I./$(SDL)/include/ -I./$(STB_IMAGE) -I./$(VKBOOTSTRAP) -I./$(VMA) -I./$(VOLK) 
+ALL_INCLUDES = -I./$(LIB) -I./$(INCLUDE) -I./$(FASTGLTF)/include/ -I./$(FASTGLTF)/deps/simdjson/ -I./$(FMT)/include/ -I./$(GLM) -I./$(IMGUI) -I./$(SDL)/include/ -I./$(STB_IMAGE) -I./$(VKBOOTSTRAP)/src -I./$(VMA) -I./$(VOLK) 
 FASTGLTF = $(LIB)/fastgltf
 FMT = $(LIB)/fmt
 GLM = $(LIB)/glm
@@ -23,15 +23,15 @@ CC = gcc
 CXX = g++
 CFLAGS = -Wall -O2 -g $(ALL_INCLUDES)
 # CFLAGS = -Wall -ggdb -O3 $(INCLUDES)
-CXXFLAGS = -std=c++20 -O2 -Wall -Wextra -pedantic -g -D_GLIBCXX_DEBUG $(ALL_INCLUDES)
+CXXFLAGS = -std=c++20 -O2 -Wall -Wextra -pedantic -g -fsanitize=address $(ALL_INCLUDES)
 # CXXFLAGS = -Wall -ggdb -O3 $(INCLUDES)
-LDFLAGS = -lvulkan -lXxf86vm -lX11 -lpthread -lXrandr -lXi -ldl -lSDL2
+LDFLAGS = -lasan -lvulkan -lXxf86vm -lX11 -lpthread -lXrandr -lXi -ldl -lSDL2
 
 # SHARED OBJECTS AND TARGETS  (Targets are executables)
 
 # Shared objects by multiple executables
 CPP_FILES := camera.cpp vk_descriptors.cpp vk_engine.cpp vk_images.cpp vk_initializers.cpp vk_loader.cpp vk_pipelines.cpp 
-OBJECTS := $(CPP_FILES:.cpp=.o) imgui_impl_sdl2.o imgui_impl_vulkan.o imgui_demo.o imgui_draw.o imgui_tables.o imgui_widgets.o imgui.o VkBootstrap.o volk.o
+OBJECTS := $(CPP_FILES:.cpp=.o) imgui_impl_sdl2.o imgui_impl_vulkan.o imgui_demo.o imgui_draw.o imgui_tables.o imgui_widgets.o imgui.o volk.o
 OBJECTS := $(addprefix $(BUILD)/, $(OBJECTS))
 
 # Targets
@@ -40,7 +40,7 @@ TARGETS_OBJ := $(CPP_EXEC:%.cpp=$(BUILD)/%.o)
 TARGETS := $(TARGETS_OBJ:%.o=%)
 
 # Compiled Libraries
-BUILTLIBS := -L ./$(FASTGLTF)/build/ -lfastgltf -lfastgltf_simdjson -L ./$(FMT)/build/ -lfmt
+BUILTLIBS := -L ./$(FASTGLTF)/build/ -lfastgltf -lfastgltf_simdjson -L ./$(FMT)/build/ -lfmt -L ./$(VKBOOTSTRAP)/build/ -lvk-bootstrap
 # BUILTLIBS := -L ./$(FASTGLTF)/build/ -lfastgltf -lfastgltf_simdjson -L ./$(FMT)/build/ -lfmt -L ./$(SDL)/build/ -lSDL2main -lSDL2-2.0 -lSDL2 -Wl,-rpath,’$$ORIGIN’
 
 # RECIPES
@@ -62,10 +62,6 @@ $(TARGETS): $(OBJECTS) $$@.o
 # imgui:
 $(BUILD)/%.o:$(IMGUI)/%.cpp
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
-
-#vkbootstrap:
-$(BUILD)/VkBootstrap.o: $(VKBOOTSTRAP)/VkBootstrap.cpp $(VKBOOTSTRAP)/VkBootstrap.h $(VKBOOTSTRAP)/VkBootstrapDispatch.h | $(BUILD)
-	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 #volk:
 $(BUILD)/volk.o: $(VOLK)/volk.c $(VOLK)/volk.c | $(BUILD)

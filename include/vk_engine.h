@@ -236,6 +236,11 @@ public:
 private:
 	
 	void init_vulkan();
+    void init_instance();
+    void init_debug_messenger();
+    void init_surface();
+    void init_physical_device();
+    void init_logical_device();
 	void init_swapchain();
 	void init_commands();
 	void init_sync_structures();
@@ -257,7 +262,11 @@ private:
 
 
 	void update_scene();
+
+	static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageType, const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData);
 };
 namespace vkutil {
 	bool is_visible(const RenderObject& obj, const glm::mat4& viewProj);
+	bool check_validation_layer_support(const std::vector<const char*> &validationLayers);
+	std::vector<const char*> get_required_extensions(SDL_Window* window, bool enableValidationLayers);
 }

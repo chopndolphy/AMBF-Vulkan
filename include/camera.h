@@ -1,6 +1,6 @@
 #pragma once
 #include "vk_types.h"
-#include <SDL_events.h>
+#include <SDL2/SDL_events.h>
 
 class Camera {
 public:
