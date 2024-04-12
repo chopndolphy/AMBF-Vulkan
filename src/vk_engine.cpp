@@ -6,7 +6,10 @@
 #include "vk_pipelines.h"
 #include "vk_loader.h"
 #include "vk_descriptors.h"
+#include <glm/glm.hpp>
+#define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/transform.hpp>
+
 
 #define VMA_IMPLEMENTATION
 #include <vk_mem_alloc.h>
@@ -34,7 +37,7 @@ VulkanEngine* loadedEngine = nullptr;
 #ifdef NDEBUG
 constexpr bool bUseValidationLayers = false;
 #else
-constexpr bool bUseValidationLayers = false;
+constexpr bool bUseValidationLayers = true;
 #endif
 
 
@@ -721,13 +724,13 @@ void VulkanEngine::init_background_pipelines()
     VK_CHECK(vkCreatePipelineLayout(_device, &computeLayout, nullptr, &_gradientPipelineLayout));
 
     VkShaderModule gradientShader;
-    if (!vkutil::load_shader_module("../../shaders/gradient_color.comp.spv", _device, &gradientShader))
+    if (!vkutil::load_shader_module("shaders/gradient_color.comp.spv", _device, &gradientShader))
     {
         fmt::print("Error when building the gradient shader \n");
     }
 
     VkShaderModule skyShader;
-    if (!vkutil::load_shader_module("../../shaders/sky.comp.spv", _device, &skyShader))
+    if (!vkutil::load_shader_module("shaders/sky.comp.spv", _device, &skyShader))
     {
         fmt::print("Error when building the sky shader \n");
     }
@@ -890,7 +893,7 @@ void VulkanEngine::init_default_data()
 
 void VulkanEngine::init_renderables()
 {
-    std::string scenePath = { "..\\..\\assets\\bistro.glb" };
+    std::string scenePath = { "assets/bistro.glb" };
     auto sceneFile = vkutil::load_gltf(this, scenePath);
 
     assert(sceneFile.has_value());
@@ -1280,12 +1283,12 @@ VKAPI_ATTR VkBool32 VKAPI_CALL VulkanEngine::debugCallback(VkDebugUtilsMessageSe
 void VulkanEngine::init_post_process_pipelines()
 {
     VkShaderModule postFragShader; 
-    if (!vkutil::load_shader_module("../../shaders/post_process.frag.spv", _device, &postFragShader)) {
+    if (!vkutil::load_shader_module("shaders/post_process.frag.spv", _device, &postFragShader)) {
         std::cout << "Error when building the triangle fragment shader module" << std::endl;
     }
 
     VkShaderModule postVertShader;
-    if (!vkutil::load_shader_module("../../shaders/post_process.vert.spv", _device, &postVertShader)) {
+    if (!vkutil::load_shader_module("shaders/post_process.vert.spv", _device, &postVertShader)) {
         std::cout << "Error when building the triangle vertex shader module" << std::endl; 
     }
 
@@ -1330,12 +1333,12 @@ void VulkanEngine::init_post_process_pipelines()
 void GLTFMetallic_Roughness::build_pipelines(VulkanEngine* engine)
 {
     VkShaderModule meshFragShader;
-    if (!vkutil::load_shader_module("../../shaders/pbr.frag.spv", engine->_device, &meshFragShader)) {
+    if (!vkutil::load_shader_module("shaders/pbr.frag.spv", engine->_device, &meshFragShader)) {
         std::cout << "Error when building the triangle fragment shader module" << std::endl;
     }
 
     VkShaderModule meshVertShader;
-    if (!vkutil::load_shader_module("../../shaders/pbr.vert.spv", engine->_device, &meshVertShader)) {
+    if (!vkutil::load_shader_module("shaders/pbr.vert.spv", engine->_device, &meshVertShader)) {
         std::cout << "Error when building the triangle vertex shader module" << std::endl; 
     }
 

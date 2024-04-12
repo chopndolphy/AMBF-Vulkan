@@ -4,7 +4,7 @@ BUILD = build
 INCLUDE = include
 LIB = lib
 
-ALL_INCLUDES = -I./$(LIB) -I./$(INCLUDE) -I./$(FASTGLTF)/include/ -I./$(FASTGLTF)/deps/simdjson/ -I./$(FMT)/include/ -I./$(GLM) -I./$(IMGUI) -I./$(SDL)/include/ -I./$(STB_IMAGE) -I./$(VKBOOTSTRAP)/src -I./$(VMA) -I./$(VOLK) 
+ALL_INCLUDES = -I./$(LIB) -I./$(INCLUDE) -I./$(FASTGLTF)/include/ -I./$(FASTGLTF)/deps/simdjson/ -I./$(FMT)/include/ -I./$(GLM) -I./$(IMGUI) -I./$(SDL)/include/ -I./$(STB_IMAGE) -I./$(VKBOOTSTRAP)/src -I./$(VMA) 
 FASTGLTF = $(LIB)/fastgltf
 FMT = $(LIB)/fmt
 GLM = $(LIB)/glm
@@ -13,7 +13,6 @@ SDL = $(LIB)/SDL
 STB_IMAGE = $(LIB)/stb_image
 VKBOOTSTRAP = $(LIB)/vkbootstrap
 VMA = $(LIB)/vma
-VOLK = $(LIB)/volk
 
 IMGUI_SOURCES := $(IMGUI)/imgui.cpp $(IMGUI)/imgui_demo.cpp $(IMGUI)/imgui_draw.cpp $(IMGUI)/imgui_tables.cpp $(IMGUI)/imgui_widgets.cpp $(IMGUI)/backends/imgui_impl_sdl2.cpp $(IMGUI)/backends/imgui_impl_vulkan.cpp
 
@@ -23,15 +22,15 @@ CC = gcc
 CXX = g++
 CFLAGS = -Wall -O2 -g $(ALL_INCLUDES)
 # CFLAGS = -Wall -ggdb -O3 $(INCLUDES)
-CXXFLAGS = -std=c++20 -O2 -Wall -Wextra -pedantic -g -fsanitize=address $(ALL_INCLUDES)
+CXXFLAGS = -std=c++20 -O2 -Wall -Wextra -pedantic -g $(ALL_INCLUDES)
 # CXXFLAGS = -Wall -ggdb -O3 $(INCLUDES)
-LDFLAGS = -lasan -lvulkan -lXxf86vm -lX11 -lpthread -lXrandr -lXi -ldl -lSDL2
+LDFLAGS = -lvulkan -lXxf86vm -lX11 -lpthread -lXrandr -lXi -ldl -lSDL2 -lglm
 
 # SHARED OBJECTS AND TARGETS  (Targets are executables)
 
 # Shared objects by multiple executables
 CPP_FILES := camera.cpp vk_descriptors.cpp vk_engine.cpp vk_images.cpp vk_initializers.cpp vk_loader.cpp vk_pipelines.cpp 
-OBJECTS := $(CPP_FILES:.cpp=.o) imgui_impl_sdl2.o imgui_impl_vulkan.o imgui_demo.o imgui_draw.o imgui_tables.o imgui_widgets.o imgui.o volk.o
+OBJECTS := $(CPP_FILES:.cpp=.o) imgui_impl_sdl2.o imgui_impl_vulkan.o imgui_demo.o imgui_draw.o imgui_tables.o imgui_widgets.o imgui.o
 OBJECTS := $(addprefix $(BUILD)/, $(OBJECTS))
 
 # Targets
@@ -62,10 +61,6 @@ $(TARGETS): $(OBJECTS) $$@.o
 # imgui:
 $(BUILD)/%.o:$(IMGUI)/%.cpp
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
-
-#volk:
-$(BUILD)/volk.o: $(VOLK)/volk.c $(VOLK)/volk.c | $(BUILD)
-	$(CC) $(CFLAGS) -c $< -o $@
 
 # recipe 2: compile objects - cpp files with header files
 $(BUILD)/%.o: $(SRC)/%.cpp $(INCLUDE)/%.h | $(BUILD)
