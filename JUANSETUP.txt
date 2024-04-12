@@ -27,7 +27,7 @@ glslc shaders/pbr.vert -o shaders/pbr.vert.spv
 glslc shaders/post_process.vert -o shaders/post_process.vert.spv
 glslc shaders/post_process.frag -o shaders/post_process.frag.spv
 
-# BUILD FMT AND FASTGLTF #
+# BUILD FMT AND FASTGLTF AND VKBOOTSTRAP #
 (from ambf_refactor directory)
 mkdir lib/fmt/build
 cd lib/fmt/build
@@ -37,6 +37,12 @@ make
 (from ambf_refactor directory)
 mkdir lib/fastgltf/build
 cd lib/fastgltf/build
+cmake ..
+make
+
+(from ambf_refactor directory)
+mkdir lib/vkbootstrap/build
+cd lib/vkbootstrap/build
 cmake ..
 make
 
