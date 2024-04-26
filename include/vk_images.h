@@ -2,6 +2,7 @@
 #pragma once 
 
 #include <vulkan/vulkan.h>
+#include "vk_types.h"
 
 namespace vkutil {
 

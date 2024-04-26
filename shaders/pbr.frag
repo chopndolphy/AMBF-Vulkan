@@ -1,5 +1,6 @@
 #version 450
 
+#extension GL_KHR_vulkan_glsl : enable
 #extension GL_GOOGLE_include_directive : require
 #include "input_structures.glsl"
 
@@ -76,12 +77,15 @@ void main()
 {	
     vec3 lightPosition = vec3(0.0, 1000.0, 0.0);
 
-    vec3 albedo     = pow(texture(colorTex, inUV).rgb, vec3(2.2));
-    float metallic  = texture(metalRoughTex, inUV).b;
-    float roughness = texture(metalRoughTex, inUV).g;
-    float ao        = texture(metalRoughTex, inUV).r;
+    vec3 albedo     = pow(texture(colorTex, inUV).rgb * materialData.colorFactors.rgb, vec3(2.2));
+    // float metallic  = texture(metalRoughTex, inUV).b;
+    // float roughness = texture(metalRoughTex, inUV).g;
+    // float ao        = texture(metalRoughTex, inUV).r;
+    float metallic = materialData.metal_rough_factors.x;
+    float roughness = materialData.metal_rough_factors.y;
 
-    vec3 N = getNormalFromMap();
+    // vec3 N = getNormalFromMap();
+    vec3 N = inNormal;
     vec3 V = normalize(sceneData.cameraPos.xyz - inWorldPos);
 
     // calculate reflectance at normal incidence; if dia-electric (like plastic) use F0 
@@ -127,7 +131,9 @@ void main()
     
     // ambient lighting (note that the next IBL tutorial will replace 
     // this ambient lighting with environment lighting).
-    vec3 ambient = vec3(0.06) * albedo * ao;
+
+    vec3 ambient = vec3(0.06) * albedo;
+    // vec3 ambient = vec3(0.06) * albedo * ao;
     
     vec3 color = ambient + Lo;
 

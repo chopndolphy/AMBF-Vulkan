@@ -6,8 +6,6 @@
 #include "vk_pipelines.h"
 #include "vk_loader.h"
 #include "vk_descriptors.h"
-#include <glm/glm.hpp>
-#define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/transform.hpp>
 
 
@@ -61,8 +59,8 @@ void VulkanEngine::init()
  
     _window = SDL_CreateWindow(
         "Vulkan Engine",
-        SDL_WINDOWPOS_CENTERED,
-        SDL_WINDOWPOS_CENTERED,
+        SDL_WINDOWPOS_UNDEFINED,
+        SDL_WINDOWPOS_UNDEFINED,
         _windowExtent.width,
         _windowExtent.height,
         window_flags);
@@ -88,12 +86,12 @@ void VulkanEngine::init()
     init_imgui();
 
     _mainCamera.velocity = glm::vec3(0.0f);
-    _mainCamera.position = glm::vec3(0.0f, 5.0f, 0.0f);
+    _mainCamera.position = glm::vec3(0.0f, 1.0f, 0.0f);
 
     _mainCamera.pitch = 0;
     _mainCamera.yaw = 180;
 
-    _sceneData.ambientColor = glm::vec4(0.1f);
+    _sceneData.ambientColor = glm::vec4(0.1f, 0.1f, 0.1f, 1.0f);
     _sceneData.sunlightColor = glm::vec4(0.9647f, 0.8039f, 0.5451f, 1.0f);
     _sceneData.sunlightDirection = glm::vec4{ 0.0, 1.0f, 0.5f, 1.0f };
     // everything went fine
@@ -120,7 +118,7 @@ void VulkanEngine::cleanup()
         destroy_swapchain();
 
         vkDestroySurfaceKHR(_instance, _surface, nullptr);
-
+        
         vmaDestroyAllocator(_allocator);
  
         vkDestroyDevice(_device, nullptr);
@@ -163,12 +161,14 @@ void VulkanEngine::draw()
  
     VK_CHECK(vkBeginCommandBuffer(cmd, &cmdBeginInfo));
 
-    vkutil::transition_image(cmd, _drawImage.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
+    vkutil::transition_image(cmd, _drawImage.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
     vkutil::transition_image(cmd, _depthImage.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
+    vkutil::transition_image(cmd, _msaaDrawImage.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+    vkutil::transition_image(cmd, _msaaDepthImage.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
 
     draw_main(cmd);
 
-    vkutil::transition_image(cmd, _postProcessingImage.image, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL); 
+    vkutil::transition_image(cmd, _postProcessingImage.image, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
     vkutil::transition_image(cmd, _swapchainImages[swapchainImageIndex], VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
  
     vkutil::copy_image_to_image(cmd, _postProcessingImage.image, _swapchainImages[swapchainImageIndex], _drawExtent, _swapchainExtent);
@@ -386,31 +386,21 @@ GPUMeshBuffers VulkanEngine::uploadMesh(std::span<uint32_t> indices, std::span<V
 
 void VulkanEngine::init_vulkan()
 {
-    // init_instance();
-    // init_debug_messenger();
-    // init_surface();
-    // init_physical_device();
-    // init_logical_device();
     vkb::InstanceBuilder builder;
 
     auto inst_ret = builder
-        .set_engine_name("AMBF")
         .set_app_name("Vulkan Application")
         .request_validation_layers(bUseValidationLayers)
         .use_default_debug_messenger()
         .require_api_version(1, 3, 0)
         .build();
-    if (!inst_ret) {
-        std::cout << inst_ret.error().message() << "\n";
-    }
+
     vkb::Instance vkb_inst = inst_ret.value();
 
     _instance = vkb_inst.instance;
     _debug_messenger = vkb_inst.debug_messenger;
 
-    if (!SDL_Vulkan_CreateSurface(_window, _instance, &_surface)) {
-        std::cout << "failed to create SDL_Vulkan surface" << std::endl;
-    }
+    SDL_Vulkan_CreateSurface(_window, _instance, &_surface);
 
     VkPhysicalDeviceVulkan13Features features13{};
     features13.dynamicRendering = true;
@@ -424,30 +414,32 @@ void VulkanEngine::init_vulkan()
     features10.samplerAnisotropy = true;
     features10.sampleRateShading = true;
 
+    VkPhysicalDevicePageableDeviceLocalMemoryFeaturesEXT pdlmFeatures{};
+    pdlmFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PAGEABLE_DEVICE_LOCAL_MEMORY_FEATURES_EXT;
+    pdlmFeatures.pageableDeviceLocalMemory = true;
+
     vkb::PhysicalDeviceSelector selector{ vkb_inst };
-    selector.set_minimum_version(1, 3);
-    selector.set_required_features_13(features13);
-    selector.set_required_features_12(features12);
-    selector.set_required_features(features10);
-    selector.set_surface(_surface);
-    auto phys_device_ret = selector.select();
-    if (!phys_device_ret) {
-        std::cout << phys_device_ret.error().message() << "\n";
-    }
-    vkb::PhysicalDevice physicalDevice = phys_device_ret.value();
+    vkb::PhysicalDevice physicalDevice = selector
+        .set_minimum_version(1, 3)
+        .set_required_features_13(features13)
+        .set_required_features_12(features12)
+        .set_required_features(features10)
+        .set_surface(_surface)
+        .add_desired_extension("VK_EXT_pageable_device_local_memory")
+        .add_desired_extension("VK_EXT_memory_priority")
+        .add_required_extension_features(pdlmFeatures)
+        .select()
+        .value();
 
     vkb::DeviceBuilder deviceBuilder{ physicalDevice };
-    auto device_ret = deviceBuilder.build();
-    if (!device_ret) {
-        std::cout << device_ret.error().message() << "\n";
-    }
 
-    vkb::Device vkbDevice = device_ret.value();
+    vkb::Device vkbDevice = deviceBuilder.build().value();
 
     _device = vkbDevice.device;
     _chosenGPU = physicalDevice.physical_device; 
 
     vkGetPhysicalDeviceProperties(_chosenGPU, &_gpuProperties);
+    _msaaSampleCount = getMaxUsableSampleCount();
 
     _graphicsQueue = vkbDevice.get_queue(vkb::QueueType::graphics).value();
     _graphicsQueueFamily = vkbDevice.get_queue_index(vkb::QueueType::graphics).value();
@@ -458,68 +450,6 @@ void VulkanEngine::init_vulkan()
     allocatorInfo.instance = _instance;
     allocatorInfo.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
     vmaCreateAllocator(&allocatorInfo, &_allocator); 
-}
-void VulkanEngine::init_instance()
-{
-    const std::vector<const char*> validationLayers = {
-        "VK_LAYER_KHRONOS_validation"
-    };
-    if (bUseValidationLayers && !vkutil::check_validation_layer_support(validationLayers)) {
-        throw std::runtime_error("validation layers requested, but not available!");
-    }
-    VkApplicationInfo appInfo{};
-    appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-    appInfo.pApplicationName = "Vulkan Application";
-    appInfo.applicationVersion = VK_MAKE_API_VERSION(1, 0, 0, 0);
-    appInfo.pEngineName = "AMBF";
-    appInfo.engineVersion = VK_MAKE_API_VERSION(3, 0, 0, 0);
-    appInfo.apiVersion = VK_API_VERSION_1_3;
-
-    VkInstanceCreateInfo createInfo{};
-    createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
-    createInfo.pApplicationInfo = &appInfo;
-
-    auto extensions = vkutil::get_required_extensions(_window, bUseValidationLayers);
-    createInfo.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
-    createInfo.ppEnabledExtensionNames = extensions.data();
-
-    VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo{};
-    if (bUseValidationLayers)
-    {
-        createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
-        createInfo.ppEnabledLayerNames = validationLayers.data();
-
-        debugCreateInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
-        debugCreateInfo.messageSeverity =
-            VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
-            VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
-            VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
-        debugCreateInfo.messageType =
-            VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
-            VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
-            VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
-        debugCreateInfo.pfnUserCallback = debugCallback;
-        
-        createInfo.pNext = (VkDebugUtilsMessengerCreateInfoEXT*) &debugCreateInfo;
-    }
-    else
-    {
-        createInfo.enabledLayerCount = 0;
-        createInfo.pNext = nullptr;
-    }
-    VK_CHECK(vkCreateInstance(&createInfo, nullptr, &_instance));
-}
-void VulkanEngine::init_debug_messenger()
-{
-}
-void VulkanEngine::init_surface()
-{
-}
-void VulkanEngine::init_physical_device()
-{
-}
-void VulkanEngine::init_logical_device()
-{
 }
 void VulkanEngine::init_swapchain()
 { 
@@ -543,11 +473,59 @@ void VulkanEngine::init_swapchain()
     drawImageUsages |= VK_IMAGE_USAGE_SAMPLED_BIT;
     VkImageCreateInfo rimg_info = vkinit::image_create_info(_drawImage.imageFormat, drawImageUsages, drawImageExtent); 
     VmaAllocationCreateInfo rimg_allocinfo = {};
-    rimg_allocinfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
-    rimg_allocinfo.requiredFlags = VkMemoryPropertyFlags(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT ); 
+    rimg_allocinfo.usage = VMA_MEMORY_USAGE_UNKNOWN;
+    rimg_allocinfo.requiredFlags = VkMemoryPropertyFlags(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT); 
     vmaCreateImage(_allocator, &rimg_info, &rimg_allocinfo, &_drawImage.image, &_drawImage.allocation, nullptr); 
     VkImageViewCreateInfo rview_info = vkinit::imageview_create_info(_drawImage.imageFormat, _drawImage.image, VK_IMAGE_ASPECT_COLOR_BIT); 
     VK_CHECK(vkCreateImageView(_device, &rview_info, nullptr, &_drawImage.imageView));
+ 
+    _msaaDrawImage.imageFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
+    _msaaDrawImage.imageExtent = drawImageExtent; 
+    VkImageUsageFlags msaaDrawImageUsages{};
+    msaaDrawImageUsages |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    msaaDrawImageUsages |= VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT;
+    VkImageCreateInfo mrimg_info = vkinit::image_create_info(_msaaDrawImage.imageFormat, msaaDrawImageUsages, drawImageExtent); 
+    mrimg_info.samples = _msaaSampleCount;
+    VmaAllocationCreateInfo mrimg_allocinfo = {};
+    mrimg_allocinfo.usage = VMA_MEMORY_USAGE_UNKNOWN;
+    mrimg_allocinfo.requiredFlags = VkMemoryPropertyFlags(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT); 
+    VK_CHECK(vmaCreateImage(_allocator, &mrimg_info, &mrimg_allocinfo, &_msaaDrawImage.image, &_msaaDrawImage.allocation, nullptr));
+    VkImageViewCreateInfo mrview_info = vkinit::imageview_create_info(_msaaDrawImage.imageFormat, _msaaDrawImage.image, VK_IMAGE_ASPECT_COLOR_BIT); 
+    mrview_info.components.r = VK_COMPONENT_SWIZZLE_R;
+    mrview_info.components.g = VK_COMPONENT_SWIZZLE_G;
+    mrview_info.components.b = VK_COMPONENT_SWIZZLE_B;
+    mrview_info.components.a = VK_COMPONENT_SWIZZLE_A;
+    VK_CHECK(vkCreateImageView(_device, &mrview_info, nullptr, &_msaaDrawImage.imageView));
+ 
+    _depthImage.imageFormat = VK_FORMAT_D32_SFLOAT;
+    _depthImage.imageExtent = drawImageExtent;
+    VkImageUsageFlags depthImageUsages{};
+    depthImageUsages |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT; 
+    VkImageCreateInfo dimg_info = vkinit::image_create_info(_depthImage.imageFormat, depthImageUsages, drawImageExtent); 
+    VmaAllocationCreateInfo dimg_allocinfo = {};
+    dimg_allocinfo.usage = VMA_MEMORY_USAGE_UNKNOWN;
+    dimg_allocinfo.requiredFlags = VkMemoryPropertyFlags(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT); 
+    vmaCreateImage(_allocator, &dimg_info, &dimg_allocinfo, &_depthImage.image, &_depthImage.allocation, nullptr); 
+    VkImageViewCreateInfo dview_info = vkinit::imageview_create_info(_depthImage.imageFormat, _depthImage.image, VK_IMAGE_ASPECT_DEPTH_BIT); 
+    VK_CHECK(vkCreateImageView(_device, &dview_info, nullptr, &_depthImage.imageView));
+
+    _msaaDepthImage.imageFormat = VK_FORMAT_D32_SFLOAT;
+    _msaaDepthImage.imageExtent = drawImageExtent;
+    VkImageUsageFlags msaaDepthImageUsages{};
+    msaaDepthImageUsages |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT; 
+    msaaDepthImageUsages |= VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT; 
+    VkImageCreateInfo mdimg_info = vkinit::image_create_info(_msaaDepthImage.imageFormat, msaaDepthImageUsages, drawImageExtent); 
+    mdimg_info.samples = _msaaSampleCount;
+    VmaAllocationCreateInfo mdimg_allocinfo = {};
+    mdimg_allocinfo.usage = VMA_MEMORY_USAGE_UNKNOWN;
+    mdimg_allocinfo.requiredFlags = VkMemoryPropertyFlags(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT); 
+    vmaCreateImage(_allocator, &mdimg_info, &mdimg_allocinfo, &_msaaDepthImage.image, &_msaaDepthImage.allocation, nullptr); 
+    VkImageViewCreateInfo mdview_info = vkinit::imageview_create_info(_msaaDepthImage.imageFormat, _msaaDepthImage.image, VK_IMAGE_ASPECT_DEPTH_BIT); 
+    mdview_info.components.r = VK_COMPONENT_SWIZZLE_R;
+    mdview_info.components.g = VK_COMPONENT_SWIZZLE_G;
+    mdview_info.components.b = VK_COMPONENT_SWIZZLE_B;
+    mdview_info.components.a = VK_COMPONENT_SWIZZLE_A;
+    VK_CHECK(vkCreateImageView(_device, &mdview_info, nullptr, &_msaaDepthImage.imageView));
  
     _postProcessingImage.imageFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
     _postProcessingImage.imageExtent = drawImageExtent; 
@@ -556,19 +534,13 @@ void VulkanEngine::init_swapchain()
     postProcessingImageUsages |= VK_IMAGE_USAGE_STORAGE_BIT;
     postProcessingImageUsages |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
     VkImageCreateInfo pimg_info = vkinit::image_create_info(_postProcessingImage.imageFormat, postProcessingImageUsages, _postProcessingImage.imageExtent); 
-    vmaCreateImage(_allocator, &pimg_info, &rimg_allocinfo, &_postProcessingImage.image, &_postProcessingImage.allocation, nullptr); 
+    VmaAllocationCreateInfo pimg_allocinfo = {};
+    pimg_allocinfo.usage = VMA_MEMORY_USAGE_UNKNOWN;
+    pimg_allocinfo.requiredFlags = VkMemoryPropertyFlags(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT ); 
+    vmaCreateImage(_allocator, &pimg_info, &pimg_allocinfo, &_postProcessingImage.image, &_postProcessingImage.allocation, nullptr); 
     VkImageViewCreateInfo pview_info = vkinit::imageview_create_info(_postProcessingImage.imageFormat, _postProcessingImage.image, VK_IMAGE_ASPECT_COLOR_BIT); 
     VK_CHECK(vkCreateImageView(_device, &pview_info, nullptr, &_postProcessingImage.imageView));
 
-    _depthImage.imageFormat = VK_FORMAT_D32_SFLOAT;
-    _depthImage.imageExtent = drawImageExtent;
-    VkImageUsageFlags depthImageUsages{};
-    depthImageUsages |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT; 
-    VkImageCreateInfo dimg_info = vkinit::image_create_info(_depthImage.imageFormat, depthImageUsages, drawImageExtent); 
-    vmaCreateImage(_allocator, &dimg_info, &rimg_allocinfo, &_depthImage.image, &_depthImage.allocation, nullptr); 
-    VkImageViewCreateInfo dview_info = vkinit::imageview_create_info(_depthImage.imageFormat, _depthImage.image, VK_IMAGE_ASPECT_DEPTH_BIT); 
-    VK_CHECK(vkCreateImageView(_device, &dview_info, nullptr, &_depthImage.imageView));
- 
     _mainDeletionQueue.push_function([=]() {
         vkDestroyImageView(_device, _drawImage.imageView, nullptr);
         vmaDestroyImage(_allocator, _drawImage.image, _drawImage.allocation);
@@ -578,6 +550,12 @@ void VulkanEngine::init_swapchain()
 
         vkDestroyImageView(_device, _postProcessingImage.imageView, nullptr);
         vmaDestroyImage(_allocator, _postProcessingImage.image, _postProcessingImage.allocation);
+
+        vkDestroyImageView(_device, _msaaDrawImage.imageView, nullptr);
+        vmaDestroyImage(_allocator, _msaaDrawImage.image, _msaaDrawImage.allocation);
+
+        vkDestroyImageView(_device, _msaaDepthImage.imageView, nullptr);
+        vmaDestroyImage(_allocator, _msaaDepthImage.image, _msaaDepthImage.allocation);
     });
 }
 void VulkanEngine::init_commands()
@@ -893,12 +871,12 @@ void VulkanEngine::init_default_data()
 
 void VulkanEngine::init_renderables()
 {
-    std::string scenePath = { "assets/bistro.glb" };
+    std::string scenePath = { "assets/juan.glb" };
     auto sceneFile = vkutil::load_gltf(this, scenePath);
 
     assert(sceneFile.has_value());
 
-    _loadedScenes["bistro"] = *sceneFile;
+    _loadedScenes["juan"] = *sceneFile;
 }
 
 void VulkanEngine::create_swapchain(uint32_t width, uint32_t height)
@@ -969,16 +947,30 @@ void VulkanEngine::draw_main(VkCommandBuffer cmd)
 { 
     ComputeEffect& effect = _backgroundEffects[_currentBackgroundEffect];
 
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, effect.pipeline);
+    //vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, effect.pipeline);
 
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, _gradientPipelineLayout, 0, 1, &_drawImageDescriptors, 0, nullptr);
+    //vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, _gradientPipelineLayout, 0, 1, &_drawImageDescriptors, 0, nullptr);
 
-    vkCmdPushConstants(cmd, _gradientPipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(ComputePushConstants), &effect.data);
+    //vkCmdPushConstants(cmd, _gradientPipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(ComputePushConstants), &effect.data);
 
-    vkCmdDispatch(cmd, std::ceil(_drawExtent.width / 16.0), std::ceil(_drawExtent.height / 16.0), 1);
+    //vkCmdDispatch(cmd, std::ceil(_drawExtent.width / 16.0), std::ceil(_drawExtent.height / 16.0), 1);
+ 
+    //VkRenderingAttachmentInfo colorAttachment = vkinit::attachment_info(_drawImage.imageView, nullptr, VK_IMAGE_LAYOUT_GENERAL); 
+    //VkRenderingAttachmentInfo depthAttachment = vkinit::depth_attachment_info(_depthImage.imageView, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL); 
+    //VkRenderingInfo renderInfo = vkinit::rendering_info(_drawExtent, &colorAttachment, &depthAttachment);
 
-    VkRenderingAttachmentInfo colorAttachment = vkinit::attachment_info(_drawImage.imageView, nullptr, VK_IMAGE_LAYOUT_GENERAL); 
-    VkRenderingAttachmentInfo depthAttachment = vkinit::depth_attachment_info(_depthImage.imageView, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL); 
+    VkRenderingAttachmentInfo colorAttachment = vkinit::attachment_info(_msaaDrawImage.imageView, nullptr, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL); 
+    colorAttachment.resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT;
+    colorAttachment.resolveImageView = _drawImage.imageView;
+    colorAttachment.resolveImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    VkRenderingAttachmentInfo depthAttachment = vkinit::depth_attachment_info(_msaaDepthImage.imageView, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL); 
+    depthAttachment.resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT;
+    depthAttachment.resolveImageView = _depthImage.imageView;
+    depthAttachment.resolveImageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+    depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     VkRenderingInfo renderInfo = vkinit::rendering_info(_drawExtent, &colorAttachment, &depthAttachment);
 
     vkCmdBeginRendering(cmd, &renderInfo); 
@@ -993,10 +985,11 @@ void VulkanEngine::draw_main(VkCommandBuffer cmd)
 
     vkCmdEndRendering(cmd);
  
-    VkRenderingAttachmentInfo postAttachment = vkinit::attachment_info(_postProcessingImage.imageView, nullptr, VK_IMAGE_LAYOUT_GENERAL);
+    VkRenderingAttachmentInfo postAttachment = vkinit::attachment_info(_postProcessingImage.imageView, nullptr, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
     VkRenderingInfo postInfo = vkinit::rendering_info(_drawExtent, &postAttachment, nullptr);
 
-    vkutil::transition_image(cmd, _postProcessingImage.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
+    vkutil::transition_image(cmd, _postProcessingImage.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+    vkutil::transition_image(cmd, _drawImage.image, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
     vkCmdBeginRendering(cmd, &postInfo);
 
@@ -1018,7 +1011,7 @@ void VulkanEngine::draw_main(VkCommandBuffer cmd)
     VkDescriptorSet postProcessingDescriptor = get_current_frame()._frameDescriptors.allocate(_device, _postProcessingDescriptorLayout);
 
     DescriptorWriter writer;
-    writer.write_image(0, _drawImage.imageView, VK_IMAGE_LAYOUT_GENERAL, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
+    writer.write_image(0, _drawImage.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
     writer.write_sampler(1, _defaultSamplerLinear, VK_DESCRIPTOR_TYPE_SAMPLER);
     writer.write_buffer(2, postProcessingBuffer.buffer, sizeof(UniformBlock), 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
     writer.update_set(_device, postProcessingDescriptor);
@@ -1053,7 +1046,7 @@ void VulkanEngine::draw_main(VkCommandBuffer cmd)
 
 void VulkanEngine::draw_imgui(VkCommandBuffer cmd, VkImageView targetImageView)
 {
-    VkRenderingAttachmentInfo colorAttachment = vkinit::attachment_info(targetImageView, nullptr, VK_IMAGE_LAYOUT_GENERAL);
+    VkRenderingAttachmentInfo colorAttachment = vkinit::attachment_info(targetImageView, nullptr, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
     VkRenderingInfo renderInfo = vkinit::rendering_info(_swapchainExtent, &colorAttachment, nullptr);
 
     vkCmdBeginRendering(cmd, &renderInfo);
@@ -1069,9 +1062,9 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
     opaque_draws.reserve(_mainDrawContext.OpaqueSurfaces.size());
 
     for (uint32_t i = 0; i < _mainDrawContext.OpaqueSurfaces.size(); i++) {
-        if (vkutil::is_visible(_mainDrawContext.OpaqueSurfaces[i], _sceneData.viewproj)) {
+        //if (vkutil::is_visible(_mainDrawContext.OpaqueSurfaces[i], _sceneData.viewproj)) {
             opaque_draws.push_back(i); 
-        }
+        //}
     }
 
     std::sort(opaque_draws.begin(), opaque_draws.end(), [&](const auto& iA, const auto& iB) {
@@ -1260,12 +1253,14 @@ void VulkanEngine::update_scene()
  
     _sceneData.cameraPos = glm::vec4(_mainCamera.position, 1.0f);
     _sceneData.view = _mainCamera.getViewMatrix();
-    _sceneData.proj = glm::perspective(glm::radians(70.0f), (float)_drawExtent.width / (float)_drawExtent.height, 10000.0f, 0.1f);
+    float aspectRatio = (float)_drawExtent.width / (float)_drawExtent.height;
+    if (aspectRatio != aspectRatio) return;
+    _sceneData.proj = glm::perspective(glm::radians(70.0f), aspectRatio, 10000.0f, 0.001f);
+    _sceneData.proj[1][1] *= 1; //might need to change to -1
     _sceneData.viewproj = _sceneData.proj * _sceneData.view;
 
-    _sceneData.proj[1][1] *= 1; //might need to change to -1
  
-    _loadedScenes["bistro"]->Draw(glm::mat4{ 1.0f }, _mainDrawContext);
+    _loadedScenes["juan"]->Draw(glm::mat4{ 1.0f }, _mainDrawContext);
 
     auto end = std::chrono::system_clock::now();
 
@@ -1273,11 +1268,17 @@ void VulkanEngine::update_scene()
     _stats.scene_update_time = elapsed.count() / 1000.0f;
 }
 
-VKAPI_ATTR VkBool32 VKAPI_CALL VulkanEngine::debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageType, const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData, void *pUserData)
+VkSampleCountFlagBits VulkanEngine::getMaxUsableSampleCount()
 {
-    std::cerr << "validation layer: " << pCallbackData->pMessage << std::endl;
+    VkSampleCountFlags counts = _gpuProperties.limits.framebufferColorSampleCounts & _gpuProperties.limits.framebufferDepthSampleCounts;
+    if (counts & VK_SAMPLE_COUNT_64_BIT) { return VK_SAMPLE_COUNT_64_BIT; }
+    if (counts & VK_SAMPLE_COUNT_32_BIT) { return VK_SAMPLE_COUNT_32_BIT; }
+    if (counts & VK_SAMPLE_COUNT_16_BIT) { return VK_SAMPLE_COUNT_16_BIT; }
+    if (counts & VK_SAMPLE_COUNT_8_BIT) { return VK_SAMPLE_COUNT_8_BIT; }
+    if (counts & VK_SAMPLE_COUNT_4_BIT) { return VK_SAMPLE_COUNT_4_BIT; }
+    if (counts & VK_SAMPLE_COUNT_2_BIT) { return VK_SAMPLE_COUNT_2_BIT; }
 
-    return VK_FALSE;
+    return VK_SAMPLE_COUNT_1_BIT;
 }
 
 void VulkanEngine::init_post_process_pipelines()
@@ -1373,7 +1374,7 @@ void GLTFMetallic_Roughness::build_pipelines(VulkanEngine* engine)
     pipelineBuilder.set_input_topology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
     pipelineBuilder.set_polygon_mode(VK_POLYGON_MODE_FILL);
     pipelineBuilder.set_cull_mode(VK_CULL_MODE_NONE, VK_FRONT_FACE_CLOCKWISE);
-    pipelineBuilder.set_multisampling_none();
+    pipelineBuilder.enable_multisampling(engine->_msaaSampleCount);
     pipelineBuilder.disable_blending();
     pipelineBuilder.enable_depth_test(true, VK_COMPARE_OP_GREATER_OR_EQUAL);
     pipelineBuilder.set_color_attachment_format(engine->_drawImage.imageFormat);
@@ -1410,7 +1411,7 @@ MaterialInstance GLTFMetallic_Roughness::write_material(VkDevice device, Materia
     else {
         matData.pipeline = &opaquePipeline;
     }
-        matData.pipeline = &opaquePipeline; // DEBUGGGING PURPOSES
+        //matData.pipeline = &opaquePipeline; // DEBUGGGING PURPOSES
 
     matData.materialSet = descriptorAllocator.allocate(device, materialLayout);
 
@@ -1485,43 +1486,4 @@ bool vkutil::is_visible(const RenderObject& obj, const glm::mat4& viewProj)
     else {
         return true;
     }
-}
-
-bool vkutil::check_validation_layer_support(const std::vector<const char*> &validationLayers)
-{
-    uint32_t layerCount;
-        vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
-
-        std::vector<VkLayerProperties> availableLayers(layerCount);
-        vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data());
-
-        for (const char* layerName : validationLayers) {
-            bool layerFound = false;
-
-            for (const auto& layerProperties : availableLayers) {
-                if (strcmp(layerName, layerProperties.layerName) == 0) {
-                    layerFound = true;
-                    break;
-                }
-            }
-
-            if (!layerFound) {
-                return false;
-            }
-        }
-
-        return true;
-}
-
-std::vector<const char *> vkutil::get_required_extensions(SDL_Window* window, bool enableValidationLayers)
-{
-    uint32_t sdlExtensionCount = 0;
-    const char** sdlExtensions;
-    SDL_Vulkan_GetInstanceExtensions(window, &sdlExtensionCount, sdlExtensions);  
-    std::vector<const char*> extensions(sdlExtensions, sdlExtensions + sdlExtensionCount);
-    if (enableValidationLayers) {
-        extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
-    }
-
-    return extensions;
 }

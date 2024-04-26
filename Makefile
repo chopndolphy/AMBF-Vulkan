@@ -22,7 +22,7 @@ CC = gcc
 CXX = g++
 CFLAGS = -Wall -O2 -g $(ALL_INCLUDES)
 # CFLAGS = -Wall -ggdb -O3 $(INCLUDES)
-CXXFLAGS = -std=c++20 -O2 -Wall -Wextra -pedantic -g $(ALL_INCLUDES)
+CXXFLAGS = -std=c++20 -O2 -Wall -Wextra -pedantic -g $(ALL_INCLUDES) -DGLM_FORCE_DEPTH_ZERO_TO_ONE
 # CXXFLAGS = -Wall -ggdb -O3 $(INCLUDES)
 LDFLAGS = -lvulkan -lXxf86vm -lX11 -lpthread -lXrandr -lXi -ldl -lSDL2 -lglm
 

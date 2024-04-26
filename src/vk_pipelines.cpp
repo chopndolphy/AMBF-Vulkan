@@ -30,7 +30,9 @@ bool vkutil::load_shader_module(const char* filePath, VkDevice device, VkShaderM
 	createInfo.pCode = buffer.data();
 
 	VkShaderModule shaderModule;
-	VK_CHECK(vkCreateShaderModule(device, &createInfo, nullptr, &shaderModule));
+	if (vkCreateShaderModule(device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS) {
+		return false;
+	}
 	*outShaderModule = shaderModule;
 	return true;
 }
@@ -84,11 +86,11 @@ void PipelineBuilder::set_multisampling_none()
 	_multisampling.alphaToOneEnable = VK_FALSE;
 }
 
-void PipelineBuilder::enable_multisampling()
+void PipelineBuilder::enable_multisampling(VkSampleCountFlagBits sampleCount)
 {
-	_multisampling.sampleShadingEnable = VK_FALSE;
-	_multisampling.rasterizationSamples = VK_SAMPLE_COUNT_4_BIT;
-	_multisampling.minSampleShading = 1.0f;
+	_multisampling.sampleShadingEnable = VK_TRUE;
+	_multisampling.rasterizationSamples = sampleCount;
+	_multisampling.minSampleShading = 0.2f;
 	_multisampling.pSampleMask = nullptr;
 	_multisampling.alphaToCoverageEnable = VK_FALSE;
 	_multisampling.alphaToOneEnable = VK_FALSE;
