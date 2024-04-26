@@ -35,3 +35,9 @@
 assets/
 build/
 *.spv
+*.vert.spv
+*.frag.spv
+*.comp.spv
+
+imgui.ini
+*/build/
