@@ -8,7 +8,6 @@
 #include "vk_descriptors.h"
 #include <glm/gtx/transform.hpp>
 
-
 #define VMA_IMPLEMENTATION
 #include <vk_mem_alloc.h>
 
@@ -31,6 +30,8 @@
 #include <SDL2/SDL_mouse.h>
 
 VulkanEngine* loadedEngine = nullptr;
+
+#define NDEBUG
 
 #ifdef NDEBUG
 constexpr bool bUseValidationLayers = false;
@@ -89,7 +90,7 @@ void VulkanEngine::init()
     _mainCamera.position = glm::vec3(0.0f, 1.0f, 0.0f);
 
     _mainCamera.pitch = 0;
-    _mainCamera.yaw = 180;
+    _mainCamera.yaw = 0;
 
     _sceneData.ambientColor = glm::vec4(0.1f, 0.1f, 0.1f, 1.0f);
     _sceneData.sunlightColor = glm::vec4(0.9647f, 0.8039f, 0.5451f, 1.0f);
@@ -239,9 +240,11 @@ void VulkanEngine::run()
         
         if (_mainCamera.shouldUnfocus) {
             SDL_SetRelativeMouseMode(SDL_FALSE); // probably should be an event system
+            SDL_SetWindowMouseGrab(_window, SDL_FALSE);
         }
         else {
             SDL_SetRelativeMouseMode(SDL_TRUE); // probably should be an event system 
+            SDL_SetWindowMouseGrab(_window, SDL_TRUE);
         }
 
         if (_mainCamera.shouldClose) {
@@ -1062,9 +1065,9 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
     opaque_draws.reserve(_mainDrawContext.OpaqueSurfaces.size());
 
     for (uint32_t i = 0; i < _mainDrawContext.OpaqueSurfaces.size(); i++) {
-        //if (vkutil::is_visible(_mainDrawContext.OpaqueSurfaces[i], _sceneData.viewproj)) {
+        // if (vkutil::is_visible(_mainDrawContext.OpaqueSurfaces[i], _sceneData.viewproj)) {
             opaque_draws.push_back(i); 
-        //}
+        // }
     }
 
     std::sort(opaque_draws.begin(), opaque_draws.end(), [&](const auto& iA, const auto& iB) {
