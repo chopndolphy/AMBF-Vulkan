@@ -76,13 +76,14 @@ vec3 fresnelSchlick(float cosTheta, vec3 F0)
 void main()
 {	
     vec3 lightPosition = vec3(0.0, 1000.0, 0.0);
+    // vec3 lightPosition = vec3(0.0, 5.0, 0.0);
 
     vec3 albedo     = pow(texture(colorTex, inUV).rgb * materialData.colorFactors.rgb, vec3(2.2));
-    // float metallic  = texture(metalRoughTex, inUV).b;
-    // float roughness = texture(metalRoughTex, inUV).g;
-    // float ao        = texture(metalRoughTex, inUV).r;
-    float metallic = materialData.metal_rough_factors.x;
-    float roughness = materialData.metal_rough_factors.y;
+    float metallic  = texture(metalRoughTex, inUV).b;
+    float roughness = texture(metalRoughTex, inUV).g;
+    float ao        = texture(metalRoughTex, inUV).r;
+    // float metallic = materialData.metal_rough_factors.x;
+    // float roughness = materialData.metal_rough_factors.y;
 
     // vec3 N = getNormalFromMap();
     vec3 N = inNormal;
@@ -100,8 +101,8 @@ void main()
 	vec3 H = normalize(V + L);
 	float distance = length(lightPosition - inWorldPos);
 	float attenuation = 1.0 / (distance * distance);
-//	vec3 radiance = (sceneData.sunlightColor.xyz + vec3(3.0)) * attenuation;
-	vec3 radiance = (sceneData.sunlightColor.xyz * vec3(10.0));
+	// vec3 radiance = (sceneData.sunlightColor.xyz + vec3(3.0)) * attenuation;
+	vec3 radiance = (sceneData.sunlightColor.xyz * vec3(20.0));
 
 	// Cook-Torrance BRDF
 	float NDF = DistributionGGX(N, H, roughness);   
@@ -132,8 +133,9 @@ void main()
     // ambient lighting (note that the next IBL tutorial will replace 
     // this ambient lighting with environment lighting).
 
-    vec3 ambient = vec3(0.06) * albedo;
-    // vec3 ambient = vec3(0.06) * albedo * ao;
+    // vec3 ambient = vec3(0.1) * albedo;
+    // vec3 ambient = vec3(0.03) * albedo;
+    vec3 ambient = vec3(0.06) * albedo * ao;
     
     vec3 color = ambient + Lo;
 

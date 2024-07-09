@@ -218,6 +218,8 @@ std::optional<std::shared_ptr<LoadedGLTF>> vkutil::load_gltf(VulkanEngine* engin
 		file.meshes[mesh.name.c_str()] = newMesh;
 		newMesh->name = mesh.name;
 
+		std::cout << mesh.name << std::endl;
+
 		indices.clear();
 		vertices.clear();
 

@@ -27,24 +27,31 @@ glslc shaders/pbr.vert -o shaders/pbr.vert.spv
 glslc shaders/post_process.vert -o shaders/post_process.vert.spv
 glslc shaders/post_process.frag -o shaders/post_process.frag.spv
 
-# BUILD FMT AND FASTGLTF AND VKBOOTSTRAP #
+# BUILD FMT AND FASTGLTF AND VKBOOTSTRAP AND GLM #
 (from ambf_refactor directory)
 mkdir lib/fmt/build
 cd lib/fmt/build
 cmake ..
 make
+cd ../../..
 
-(from ambf_refactor directory)
 mkdir lib/fastgltf/build
 cd lib/fastgltf/build
 cmake ..
 make
+cd ../../..
 
-(from ambf_refactor directory)
 mkdir lib/vkbootstrap/build
 cd lib/vkbootstrap/build
 cmake ..
 make
+cd ../../..
+
+mkdir lib/glm/build
+cd lib/glm/build
+cmake ..
+make
+cd ../../..
 
 # GET ASSETS FOLDER #
 unzip and move assets folder into ambf_refactor directory

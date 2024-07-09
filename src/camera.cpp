@@ -24,6 +24,8 @@ void Camera::processSDLEvent(SDL_Event& e)
 		if (e.key.keysym.sym == SDLK_s) { velocity.z = 1; }
 		if (e.key.keysym.sym == SDLK_a) { velocity.x = -1; }
 		if (e.key.keysym.sym == SDLK_d) { velocity.x = 1; }
+		if (e.key.keysym.sym == SDLK_c) { velocity.y = -1; }
+		if (e.key.keysym.sym == SDLK_SPACE) { velocity.y = 1; }
 
 		if (e.key.keysym.sym == SDLK_ESCAPE) { shouldUnfocus ? shouldClose = true : shouldUnfocus = true; }
 	}
@@ -33,6 +35,8 @@ void Camera::processSDLEvent(SDL_Event& e)
 		if (e.key.keysym.sym == SDLK_s) { velocity.z = 0; }
 		if (e.key.keysym.sym == SDLK_a) { velocity.x = 0; }
 		if (e.key.keysym.sym == SDLK_d) { velocity.x = 0; }
+		if (e.key.keysym.sym == SDLK_c) { velocity.y = 0; }
+		if (e.key.keysym.sym == SDLK_SPACE) { velocity.y = 0; }
 	}
 
 	if (e.type == SDL_MOUSEMOTION && !shouldUnfocus) {
@@ -46,5 +50,5 @@ void Camera::processSDLEvent(SDL_Event& e)
 void Camera::update()
 {
 	glm::mat4 cameraRotation = getRotationMatrix();
-	position += glm::vec3(cameraRotation * glm::vec4(velocity * 0.002f, 0.0f));
+	position += glm::vec3(cameraRotation * glm::vec4(velocity * 0.2f, 0.0f));
 } 

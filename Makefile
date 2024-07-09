@@ -20,11 +20,13 @@ IMGUI_SOURCES := $(IMGUI)/imgui.cpp $(IMGUI)/imgui_demo.cpp $(IMGUI)/imgui_draw.
 # Compiler and flags
 CC = gcc
 CXX = g++
-CFLAGS = -Wall -O2 -g $(ALL_INCLUDES)
+# CFLAGS = -Wall -O2 -g $(ALL_INCLUDES)
+CFLAGS = -O3 $(ALL_INCLUDES)
 # CFLAGS = -Wall -ggdb -O3 $(INCLUDES)
 CXXFLAGS = -std=c++20 -O2 -Wall -Wextra -pedantic -g $(ALL_INCLUDES) -DGLM_FORCE_DEPTH_ZERO_TO_ONE
+# CXXFLAGS = -std=c++20 -O3 $(ALL_INCLUDES) -DGLM_FORCE_DEPTH_ZERO_TO_ONE -DNDEBUG
 # CXXFLAGS = -Wall -ggdb -O3 $(INCLUDES)
-LDFLAGS = -lvulkan -lXxf86vm -lX11 -lpthread -lXrandr -lXi -ldl -lSDL2 -lglm
+LDFLAGS = -lvulkan -lXxf86vm -lX11 -lpthread -lXrandr -lXi -ldl -lSDL2
 
 # SHARED OBJECTS AND TARGETS  (Targets are executables)
 
@@ -53,8 +55,7 @@ $(TARGETS): $(OBJECTS)
 # https://www.gnu.org/software/make/manual/html_node/Secondary-Expansion.html
 .SECONDEXPANSION:
 $(TARGETS): $(OBJECTS) $$@.o 
-	$(CXX) -o $@ $^ $(LDFLAGS) $(BUILTLIBS)
-
+	$(CXX) -o $@ $^ $(BUILTLIBS) $(LDFLAGS) 
 # Compile objects
 # Order of recipes matter. Recipe 2 has to be before recipe 3 to take into account .h prerrequisites. 
 
