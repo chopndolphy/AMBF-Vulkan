@@ -39,7 +39,7 @@ set(VMA_INCLUDE_DIR ${LIB}/vma)
 target_include_directories(ambf_engine PUBLIC ${VMA_INCLUDE_DIR})
 
 set(INTERPROCESS_INCLUDE_DIR ${LIB}/boost)
-target_include_directories(ambf_engine PUBLIC ${INTERPROCESS_INCLUDE_DIR})
+target_include_directories(ambf_engine PUBLIC ${LIB} ${INTERPROCESS_INCLUDE_DIR})
 target_compile_definitions(ambf_engine PUBLIC BOOST_DATE_TIME_NO_LIB)
 
 # if (WIN32)

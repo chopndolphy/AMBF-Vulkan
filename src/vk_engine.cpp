@@ -93,6 +93,8 @@ void VulkanEngine::init()
     init_default_data();
 
     init_renderables();
+     
+    init_interprocess();
 
     init_ray_tracing();
 
@@ -121,7 +123,7 @@ void VulkanEngine::cleanup()
         for (auto& scene : _loadedScenes) {
             scene.second->clearAll();
         }
-
+        _interprocess->destroy(); 
         _loadedScenes.clear();
         
         for (auto& frame : _frames) {
@@ -377,7 +379,7 @@ void VulkanEngine::run()
         if (ImGui::Begin("Transform"))
         {
             ImGui::DragFloat3("Transform", _guiTransform.guiTransform);
-            ImGui::DragFloat3("Sunlight Direction", _guiTransform.guiSunDir);
+            ImGui::Text("_ipOut: %f", _ipOut);
 
             ImGui::End();
         }
@@ -385,9 +387,9 @@ void VulkanEngine::run()
         ImGui::Render();
         
         glm::mat4 translate{1.0f}; 
-        for (std::shared_ptr<Node> node : _loadedScenes[sceneString]->topNodes) {
-            node->refreshTransform(glm::translate(translate, glm::vec3{_guiTransform.guiTransform[0], _guiTransform.guiTransform[1], _guiTransform.guiTransform[2]}));
-        }
+        // for (std::shared_ptr<Node> node : _loadedScenes[sceneString]->topNodes) {
+        //     node->refreshTransform(glm::translate(translate, glm::vec3{_guiTransform.guiTransform[0], _guiTransform.guiTransform[1], _guiTransform.guiTransform[2]}));
+        // }
         
         update_scene();
 
@@ -491,10 +493,6 @@ void VulkanEngine::init_vulkan()
         .set_app_name("Vulkan Application")
         .request_validation_layers(bUseValidationLayers)
         .use_default_debug_messenger()
-        .add_validation_feature_enable(VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_EXT)
-        .add_validation_feature_enable(VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_RESERVE_BINDING_SLOT_EXT)
-        .add_validation_feature_enable(VK_VALIDATION_FEATURE_ENABLE_BEST_PRACTICES_EXT)
-        .add_validation_feature_enable(VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT)
         .require_api_version(1, 3, 0)
         .build();
 
@@ -1520,8 +1518,15 @@ void VulkanEngine::update_scene()
     _sceneData.proj[1][1] *= 1; //might need to change to -1
     _sceneData.viewproj = _sceneData.proj * _sceneData.view;
 
-    // _loadedScenes[sceneString]->meshes[]
- 
+    glm::mat4 translate{1.0f}; 
+    MySHMMap::iterator iter;
+    boost::interprocess::offset_ptr<MySHMMap> point = _interprocess->_segment.find<MySHMMap>("MySHMMapName").first;
+    iter = point->begin();
+    _ipOut = iter->second;
+    for (std::shared_ptr<Node> node : _loadedScenes[sceneString]->topNodes) {
+        node->refreshTransform(glm::translate(translate, glm::vec3(_ipOut, 0.0f, 0.0f)));
+    }
+    
     _loadedScenes[sceneString]->Draw(glm::mat4{ 1.0f }, _mainDrawContext);
 
     auto end = std::chrono::system_clock::now();
@@ -1796,6 +1801,11 @@ void VulkanEngine::create_bottom_level_as()
     });
     vkDestroyQueryPool(_device, queryPool, nullptr);
     destroy_buffer(scratchBuffer);
+}
+
+void VulkanEngine::init_interprocess()
+{
+    _interprocess = std::make_shared<Interprocess>();
 }
 
 void GLTFMetallic_Roughness::build_pipelines(VulkanEngine* engine)

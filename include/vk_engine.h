@@ -8,6 +8,7 @@
 #include "vk_loader.h"
 #include "vk_pipelines.h"
 #include "camera.h"
+#include "interprocess.h"
 
 #include <vk_mem_alloc.h>
 
@@ -269,6 +270,8 @@ public:
 	uint32_t imagesCreated{};
 	uint32_t imagesDestroyed{};
 	VkPushConstantRange _computePushConstantRange{};
+	std::shared_ptr<Interprocess> _interprocess;
+	float _ipOut = 0.0f;
 
 	AllocatedBuffer create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage);
     AllocatedBuffer create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage, VmaAllocationCreateFlagBits allocFlags);
@@ -296,6 +299,7 @@ private:
 	void init_ray_tracing();
 	BLASInput mesh_to_vk_geometry(const MeshAsset &obj);
 	void create_bottom_level_as();
+	void init_interprocess();
 
 
 	void create_swapchain(uint32_t width, uint32_t hegiht);
