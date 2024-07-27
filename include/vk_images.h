@@ -1,7 +1,7 @@
 
 #pragma once 
 
-#include <vulkan/vulkan.h>
+#include <volk.h>
 #include "vk_types.h"
 
 namespace vkutil {

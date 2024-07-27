@@ -18,16 +18,15 @@
  
 #include <VkBootstrap.h>
 
-#include <imgui.h>
-#include <imgui_impl_sdl2.h>
-#include <imgui_impl_vulkan.h>
 
 #include <chrono>
 #include <thread>
 #include <array>
 #include <iostream>
 #include <fstream>
+#include <filesystem>
 #include <SDL2/SDL_mouse.h>
+
 
 VulkanEngine* loadedEngine = nullptr;
 
@@ -43,8 +42,18 @@ const std::string sceneString = "juan.glb";
 
 VulkanEngine& VulkanEngine::Get() { return *loadedEngine; } 
 
+static void check_vk_result(VkResult err)
+{
+    if (err == 0)
+        return;
+    fprintf(stderr, "[vulkan] Error: VkResult = %d\n", err);
+    if (err < 0)
+        abort();
+}
+
 void VulkanEngine::init()
 {
+    volkInitialize();
     // only one engine initialization is allowed with the application.
     assert(loadedEngine == nullptr);
     loadedEngine = this;
@@ -85,7 +94,10 @@ void VulkanEngine::init()
 
     init_renderables();
 
+    init_ray_tracing();
+
     init_imgui();
+
 
     _mainCamera.velocity = glm::vec3(0.0f);
     _mainCamera.position = glm::vec3(0.0f, 1.0f, 0.0f);
@@ -121,6 +133,11 @@ void VulkanEngine::cleanup()
         destroy_swapchain();
 
         vkDestroySurfaceKHR(_instance, _surface, nullptr);
+
+        std::cout << "Images created: " << imagesCreated << std::endl;
+        std::cout << "Images destroyed: " << imagesDestroyed << std::endl;
+        std::cout << "Buffers created: " << buffersCreated << std::endl;
+        std::cout << "Buffers destroyed: " << buffersDestroyed << std::endl;
         
         vmaDestroyAllocator(_allocator);
  
@@ -254,6 +271,12 @@ void VulkanEngine::draw()
         imageBarrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
         vkutil::transition_image(cmd, _swapchainImages[swapchainImageIndex], imageBarrier);
     }
+    if (_io->ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
+    {
+        ImGui::UpdatePlatformWindows();
+        ImGui::RenderPlatformWindowsDefault();
+
+    }
     VK_CHECK(vkEndCommandBuffer(cmd));
 
     VkCommandBufferSubmitInfo cmdInfo = vkinit::command_buffer_submit_info(cmd);
@@ -333,7 +356,7 @@ void VulkanEngine::run()
         }
         
         ImGui_ImplVulkan_NewFrame();
-        ImGui_ImplSDL2_NewFrame(_window);
+        ImGui_ImplSDL2_NewFrame();
         ImGui::NewFrame();
 
         if (ImGui::Begin("Stats"))
@@ -351,12 +374,10 @@ void VulkanEngine::run()
         }
 
 
-        float guiTransform[3];
-        float guiSunDir[3];
         if (ImGui::Begin("Transform"))
         {
-            ImGui::DragFloat3("Transform", guiTransform);
-            ImGui::DragFloat3("Sunlight Direction", guiSunDir);
+            ImGui::DragFloat3("Transform", _guiTransform.guiTransform);
+            ImGui::DragFloat3("Sunlight Direction", _guiTransform.guiSunDir);
 
             ImGui::End();
         }
@@ -365,7 +386,7 @@ void VulkanEngine::run()
         
         glm::mat4 translate{1.0f}; 
         for (std::shared_ptr<Node> node : _loadedScenes[sceneString]->topNodes) {
-            node->refreshTransform(glm::translate(translate, glm::vec3{guiTransform[0], guiTransform[1], guiTransform[2]}));
+            node->refreshTransform(glm::translate(translate, glm::vec3{_guiTransform.guiTransform[0], _guiTransform.guiTransform[1], _guiTransform.guiTransform[2]}));
         }
         
         update_scene();
@@ -409,22 +430,24 @@ GPUMeshBuffers VulkanEngine::uploadMesh(std::span<uint32_t> indices, std::span<V
 
     newSurface.vertexBuffer = create_buffer(
         vertexBufferSize,
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | 
-        VK_BUFFER_USAGE_TRANSFER_DST_BIT |
-        VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT 
+        | VK_BUFFER_USAGE_TRANSFER_DST_BIT 
+        | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT
+        | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
         VMA_MEMORY_USAGE_GPU_ONLY
     );
-
-    VkBufferDeviceAddressInfo deviceAddressInfo{
+    VkBufferDeviceAddressInfo deviceVertexAddressInfo{
         .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
         .buffer = newSurface.vertexBuffer.buffer
     };
-    newSurface.vertexBufferAddress = vkGetBufferDeviceAddress(_device, &deviceAddressInfo);
+    newSurface.vertexBufferAddress = vkGetBufferDeviceAddress(_device, &deviceVertexAddressInfo);
 
     newSurface.indexBuffer = create_buffer(
         indexBufferSize,
-        VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
-        VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        VK_BUFFER_USAGE_INDEX_BUFFER_BIT
+        | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT
+        | VK_BUFFER_USAGE_TRANSFER_DST_BIT
+        | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
         VMA_MEMORY_USAGE_GPU_ONLY
     );
 
@@ -462,18 +485,23 @@ GPUMeshBuffers VulkanEngine::uploadMesh(std::span<uint32_t> indices, std::span<V
 
 void VulkanEngine::init_vulkan()
 {
-    vkb::InstanceBuilder builder;
+    vkb::InstanceBuilder builder(vkGetInstanceProcAddr);
 
     auto inst_ret = builder
         .set_app_name("Vulkan Application")
         .request_validation_layers(bUseValidationLayers)
         .use_default_debug_messenger()
+        .add_validation_feature_enable(VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_EXT)
+        .add_validation_feature_enable(VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_RESERVE_BINDING_SLOT_EXT)
+        .add_validation_feature_enable(VK_VALIDATION_FEATURE_ENABLE_BEST_PRACTICES_EXT)
+        .add_validation_feature_enable(VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT)
         .require_api_version(1, 3, 0)
         .build();
 
     vkb::Instance vkb_inst = inst_ret.value();
 
     _instance = vkb_inst.instance;
+    volkLoadInstance(_instance);
     _debug_messenger = vkb_inst.debug_messenger;
 
     SDL_Vulkan_CreateSurface(_window, _instance, &_surface);
@@ -485,6 +513,8 @@ void VulkanEngine::init_vulkan()
     VkPhysicalDeviceVulkan12Features features12{};
     features12.bufferDeviceAddress = true;
     features12.descriptorIndexing = true;
+    features12.uniformAndStorageBuffer8BitAccess = true;
+    features12.hostQueryReset = true;
 
     VkPhysicalDeviceFeatures features10{};
     features10.samplerAnisotropy = true;
@@ -494,6 +524,30 @@ void VulkanEngine::init_vulkan()
     pdlmFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PAGEABLE_DEVICE_LOCAL_MEMORY_FEATURES_EXT;
     pdlmFeatures.pageableDeviceLocalMemory = true;
 
+    VkPhysicalDeviceAccelerationStructureFeaturesKHR accelStrucFeatures{};
+    accelStrucFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
+    accelStrucFeatures.accelerationStructure = true;
+    accelStrucFeatures.accelerationStructureCaptureReplay = true;
+
+    VkPhysicalDeviceRayQueryFeaturesKHR rayQuerFeatures{};
+    rayQuerFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR;
+    rayQuerFeatures.rayQuery = true;
+
+    VkPhysicalDeviceRayTracingMaintenance1FeaturesKHR rtMaintFeatures{};
+    rtMaintFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_MAINTENANCE_1_FEATURES_KHR;
+    rtMaintFeatures.rayTracingMaintenance1 = true;
+    rtMaintFeatures.rayTracingPipelineTraceRaysIndirect2 = true;
+
+    VkPhysicalDeviceRayTracingPipelineFeaturesKHR rtPipeFeatures {};
+    rtPipeFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR;
+    rtPipeFeatures.rayTracingPipeline = true;
+    rtPipeFeatures.rayTracingPipelineTraceRaysIndirect = true;
+    rtPipeFeatures.rayTraversalPrimitiveCulling = true;
+    
+    VkPhysicalDeviceRayTracingPositionFetchFeaturesKHR rtPosFetchFeatures{};
+    rtPosFetchFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_POSITION_FETCH_FEATURES_KHR;
+    rtPosFetchFeatures.rayTracingPositionFetch = true;
+
     vkb::PhysicalDeviceSelector selector{ vkb_inst };
     vkb::PhysicalDevice physicalDevice = selector
         .set_minimum_version(1, 3)
@@ -501,9 +555,20 @@ void VulkanEngine::init_vulkan()
         .set_required_features_12(features12)
         .set_required_features(features10)
         .set_surface(_surface)
+        .add_desired_extension("VK_KHR_deferred_host_operations")
         .add_desired_extension("VK_EXT_pageable_device_local_memory")
         .add_desired_extension("VK_EXT_memory_priority")
+        .add_desired_extension("VK_KHR_acceleration_structure")
+        .add_desired_extension("VK_KHR_ray_query")
+        .add_desired_extension("VK_KHR_ray_tracing_maintenance1")
+        .add_desired_extension("VK_KHR_ray_tracing_pipeline")
+        .add_desired_extension("VK_KHR_ray_tracing_position_fetch")
         .add_required_extension_features(pdlmFeatures)
+        .add_required_extension_features(accelStrucFeatures)
+        .add_required_extension_features(rayQuerFeatures)
+        .add_required_extension_features(rtMaintFeatures)
+        .add_required_extension_features(rtPipeFeatures)
+        .add_required_extension_features(rtPosFetchFeatures)
         .select()
         .value();
 
@@ -512,6 +577,7 @@ void VulkanEngine::init_vulkan()
     vkb::Device vkbDevice = deviceBuilder.build().value();
 
     _device = vkbDevice.device;
+    volkLoadDevice(_device);
     _chosenGPU = physicalDevice.physical_device; 
 
     vkGetPhysicalDeviceProperties(_chosenGPU, &_gpuProperties);
@@ -520,12 +586,26 @@ void VulkanEngine::init_vulkan()
     _graphicsQueue = vkbDevice.get_queue(vkb::QueueType::graphics).value();
     _graphicsQueueFamily = vkbDevice.get_queue_index(vkb::QueueType::graphics).value();
 
+    _rtProperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR;
+    _rtProperties.pNext = &_asProperties;
+    _asProperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_PROPERTIES_KHR;
+
+    VkPhysicalDeviceProperties2 prop2{};
+    prop2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+    prop2.pNext = &_rtProperties;
+    vkGetPhysicalDeviceProperties2(_chosenGPU, &prop2);
+
+    VmaVulkanFunctions vmaVulkanFunc{};
+    vmaVulkanFunc.vkGetInstanceProcAddr = vkGetInstanceProcAddr;
+    vmaVulkanFunc.vkGetDeviceProcAddr = vkGetDeviceProcAddr;
+
     VmaAllocatorCreateInfo allocatorInfo = {};
     allocatorInfo.physicalDevice = _chosenGPU;
     allocatorInfo.device = _device;
     allocatorInfo.instance = _instance;
     allocatorInfo.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
-    vmaCreateAllocator(&allocatorInfo, &_allocator); 
+    allocatorInfo.pVulkanFunctions = &vmaVulkanFunc;
+    vmaCreateAllocator(&allocatorInfo, &_allocator);
 }
 void VulkanEngine::init_swapchain()
 { 
@@ -624,14 +704,14 @@ void VulkanEngine::init_swapchain()
         vkDestroyImageView(_device, _depthImage.imageView, nullptr);
         vmaDestroyImage(_allocator, _depthImage.image, _depthImage.allocation);
 
-        vkDestroyImageView(_device, _postProcessingImage.imageView, nullptr);
-        vmaDestroyImage(_allocator, _postProcessingImage.image, _postProcessingImage.allocation);
-
         vkDestroyImageView(_device, _msaaDrawImage.imageView, nullptr);
         vmaDestroyImage(_allocator, _msaaDrawImage.image, _msaaDrawImage.allocation);
 
         vkDestroyImageView(_device, _msaaDepthImage.imageView, nullptr);
         vmaDestroyImage(_allocator, _msaaDepthImage.image, _msaaDepthImage.allocation);
+
+        vkDestroyImageView(_device, _postProcessingImage.imageView, nullptr);
+        vmaDestroyImage(_allocator, _postProcessingImage.image, _postProcessingImage.allocation);
     });
 }
 void VulkanEngine::init_commands()
@@ -767,26 +847,26 @@ void VulkanEngine::init_background_pipelines()
     computeLayout.pSetLayouts = &_drawImageDescriptorLayout;
     computeLayout.setLayoutCount = 1;
 
-    VkPushConstantRange pushConstant{};
-    pushConstant.offset = 0;
-    pushConstant.size = sizeof(ComputePushConstants);
-    pushConstant.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
 
-    computeLayout.pPushConstantRanges = &pushConstant;
+
+    _computePushConstantRange.offset = 0;
+    _computePushConstantRange.size = sizeof(ComputePushConstants);
+    _computePushConstantRange.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+
+    computeLayout.pPushConstantRanges = &_computePushConstantRange;
     computeLayout.pushConstantRangeCount = 1;
 
     VK_CHECK(vkCreatePipelineLayout(_device, &computeLayout, nullptr, &_gradientPipelineLayout));
-
-    VkShaderModule gradientShader;
-    if (!vkutil::load_shader_module("shaders/gradient_color.comp.spv", _device, &gradientShader))
+    VkShaderModule gradientShader{};
+    if (!vkutil::load_shader_module("../shaders/gradient_color.comp.spv", _device, &gradientShader))
     {
-        fmt::print("Error when building the gradient shader \n");
+        std::cout << "Error when building the gradient shader" << std::endl;
     }
 
-    VkShaderModule skyShader;
-    if (!vkutil::load_shader_module("shaders/sky.comp.spv", _device, &skyShader))
+    VkShaderModule skyShader{};
+    if (!vkutil::load_shader_module("../shaders/sky.comp.spv", _device, &skyShader))
     {
-        fmt::print("Error when building the sky shader \n");
+        std::cout << "Error when building the sky shader" << std::endl;
     }
 
     VkPipelineShaderStageCreateInfo stageInfo{};
@@ -862,7 +942,13 @@ void VulkanEngine::init_imgui()
     VkDescriptorPool imguiPool;
     VK_CHECK(vkCreateDescriptorPool(_device, &pool_info, nullptr, &imguiPool));
 
+    IMGUI_CHECKVERSION();
     ImGui::CreateContext();
+    _io = std::make_shared<ImGuiIO>(ImGui::GetIO());
+    _io->ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    _io->ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
+    _io->ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+    _io->ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
 
     ImGui_ImplSDL2_InitForVulkan(_window);
 
@@ -870,26 +956,38 @@ void VulkanEngine::init_imgui()
     init_info.Instance = _instance;
     init_info.PhysicalDevice = _chosenGPU;
     init_info.Device = _device;
+    init_info.QueueFamily = _graphicsQueueFamily;
     init_info.Queue = _graphicsQueue;
     init_info.DescriptorPool = imguiPool;
+    init_info.Subpass = 0;
     init_info.MinImageCount = 3;
     init_info.ImageCount = 3;
-    init_info.UseDynamicRendering = true;
-    init_info.ColorAttachmentFormat = _swapchainImageFormat;
-
     init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+    init_info.Allocator = _allocator->GetAllocationCallbacks();
+    init_info.CheckVkResultFn = check_vk_result;
+    init_info.UseDynamicRendering = true;
 
-    ImGui_ImplVulkan_Init(&init_info, VK_NULL_HANDLE);
+    VkPipelineRenderingCreateInfo pipeInfo{}; 
+    pipeInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
+    pipeInfo.pColorAttachmentFormats = &_swapchainImageFormat;
+    pipeInfo.colorAttachmentCount = 1;
+    init_info.PipelineRenderingCreateInfo = pipeInfo;
 
-    immediate_submit([&](VkCommandBuffer cmd) {
-        ImGui_ImplVulkan_CreateFontsTexture(cmd);
-    });
+    ImGui_ImplVulkan_Init(&init_info);
+    ImGui_ImplVulkan_CreateFontsTexture();
 
-    ImGui_ImplVulkan_DestroyFontUploadObjects();
+    // ImGui_ImplVulkan_LoadFunctions([](const char *function_name, void *vulkan_instance) {
+    //     return vkGetInstanceProcAddr(*(reinterpret_cast<VkInstance *>(vulkan_instance)), function_name);
+    // }, &_instance);
+    // ImGui_ImplVulkan_LoadFunctions([](const char *function_name, void *vulkan_device) {
+    //     return vkGetDeviceProcAddr(*(reinterpret_cast<VkDevice *>(vulkan_device)), function_name);
+    // }, &_instance);
 
     _mainDeletionQueue.push_function([=]() {
-        vkDestroyDescriptorPool(_device, imguiPool, nullptr);
         ImGui_ImplVulkan_Shutdown();
+        ImGui_ImplSDL2_Shutdown();
+        ImGui::DestroyContext();
+        vkDestroyDescriptorPool(_device, imguiPool, nullptr);
     });
 }
  
@@ -947,7 +1045,7 @@ void VulkanEngine::init_default_data()
 
 void VulkanEngine::init_renderables()
 {
-    std::string scenePath = { "assets/" + sceneString };
+    std::string scenePath = { "../assets/" + sceneString };
     auto sceneFile = vkutil::load_gltf(this, scenePath);
 
     assert(sceneFile.has_value());
@@ -1000,6 +1098,8 @@ void VulkanEngine::resize_swapchain()
 }
 AllocatedBuffer VulkanEngine::create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage)
 {
+    buffersCreated++;
+
     VkBufferCreateInfo bufferInfo = { .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
     bufferInfo.pNext = nullptr;
     bufferInfo.size = allocSize;
@@ -1015,8 +1115,28 @@ AllocatedBuffer VulkanEngine::create_buffer(size_t allocSize, VkBufferUsageFlags
 
     return newBuffer;
 }
+AllocatedBuffer VulkanEngine::create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage, VmaAllocationCreateFlagBits allocFlags)
+{
+    buffersCreated++;
+
+    VkBufferCreateInfo bufferInfo = { .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
+    bufferInfo.pNext = nullptr;
+    bufferInfo.size = allocSize;
+
+    bufferInfo.usage = usage;
+
+    VmaAllocationCreateInfo vmaAllocInfo = {};
+    vmaAllocInfo.usage = memoryUsage;
+    vmaAllocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT | allocFlags;
+    AllocatedBuffer newBuffer;
+
+    VK_CHECK(vmaCreateBuffer(_allocator, &bufferInfo, &vmaAllocInfo, &newBuffer.buffer, &newBuffer.allocation, &newBuffer.info));
+
+    return newBuffer;
+}
 void VulkanEngine::destroy_buffer(const AllocatedBuffer &buffer)
 {
+    buffersDestroyed++;
     vmaDestroyBuffer(_allocator, buffer.buffer, buffer.allocation);
 }
 void VulkanEngine::draw_main(VkCommandBuffer cmd)
@@ -1262,6 +1382,8 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
 
 AllocatedImage VulkanEngine::create_image(VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped)
 {
+    imagesCreated++;
+
     AllocatedImage newImage;
     newImage.imageFormat = format;
     newImage.imageExtent = size;
@@ -1346,8 +1468,38 @@ AllocatedImage VulkanEngine::create_image(void* data, VkExtent3D size, VkFormat 
     return new_image;
 }
 
+AllocatedAS VulkanEngine::create_accel_struct(const VkAccelerationStructureCreateInfoKHR &accel)
+{
+    AllocatedAS as;
+
+    as.buffer = create_buffer(
+        accel.size,
+        VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+        VMA_MEMORY_USAGE_GPU_ONLY
+    );
+    VkAccelerationStructureCreateInfoKHR createInfo = accel;
+    createInfo.buffer = as.buffer.buffer;
+
+    vkCreateAccelerationStructureKHR(_device, &createInfo, nullptr, &as.accel);
+
+    if (vkGetAccelerationStructureDeviceAddressKHR != nullptr) {
+        VkAccelerationStructureDeviceAddressInfoKHR info{};
+        info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR;
+        info.accelerationStructure = as.accel;
+        as.address = vkGetAccelerationStructureDeviceAddressKHR(_device, &info);
+    }
+
+    return as;
+}
+
+void VulkanEngine::destroy_accel_struct(AllocatedAS &accel) {
+    vkDestroyAccelerationStructureKHR(_device, accel.accel, nullptr);
+    destroy_buffer(accel.buffer);
+}
+
 void VulkanEngine::destroy_image(const AllocatedImage& img)
 {
+    imagesDestroyed++;
     vkDestroyImageView(_device, img.imageView, nullptr);
     vmaDestroyImage(_allocator, img.image, img.allocation);
 }
@@ -1394,12 +1546,12 @@ VkSampleCountFlagBits VulkanEngine::getMaxUsableSampleCount()
 void VulkanEngine::init_post_process_pipelines()
 {
     VkShaderModule postFragShader; 
-    if (!vkutil::load_shader_module("shaders/post_process.frag.spv", _device, &postFragShader)) {
+    if (!vkutil::load_shader_module("../shaders/post_process.frag.spv", _device, &postFragShader)) {
         std::cout << "Error when building the triangle fragment shader module" << std::endl;
     }
 
     VkShaderModule postVertShader;
-    if (!vkutil::load_shader_module("shaders/post_process.vert.spv", _device, &postVertShader)) {
+    if (!vkutil::load_shader_module("../shaders/post_process.vert.spv", _device, &postVertShader)) {
         std::cout << "Error when building the triangle vertex shader module" << std::endl; 
     }
 
@@ -1441,15 +1593,220 @@ void VulkanEngine::init_post_process_pipelines()
     }); 
 }
 
+void VulkanEngine::init_ray_tracing()
+{
+    create_bottom_level_as();
+}
+
+BLASInput VulkanEngine::mesh_to_vk_geometry(const MeshAsset &mesh)
+{
+    VkBufferDeviceAddressInfo indexAddressInfo{};
+    indexAddressInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
+    indexAddressInfo.buffer = mesh.meshBuffers.indexBuffer.buffer;
+    VkDeviceAddress indexAddress = vkGetBufferDeviceAddress(_device, &indexAddressInfo);
+    VkDeviceAddress vertexAddress = mesh.meshBuffers.vertexBufferAddress;
+    uint32_t maxPrimitiveCount = mesh.indexCount / 3;
+
+    VkAccelerationStructureGeometryTrianglesDataKHR triangles{};
+    triangles.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR;
+    triangles.vertexFormat = VK_FORMAT_R32G32B32_SFLOAT;
+    triangles.vertexData.deviceAddress = vertexAddress;
+    triangles.vertexStride = sizeof(Vertex);
+    triangles.maxVertex = mesh.vertexCount - 1;
+    triangles.indexType = VK_INDEX_TYPE_UINT32;
+    triangles.indexData.deviceAddress = indexAddress;
+
+    VkAccelerationStructureGeometryKHR geom{};
+    geom.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
+    geom.geometryType = VK_GEOMETRY_TYPE_TRIANGLES_KHR;
+    geom.flags = VK_GEOMETRY_OPAQUE_BIT_KHR;
+    geom.geometry.triangles = triangles;
+
+    VkAccelerationStructureBuildRangeInfoKHR offset{}; // blas will always have only 1 geometry for now
+    offset.firstVertex = 0;
+    offset.primitiveCount = maxPrimitiveCount;
+    offset.primitiveOffset = 0;
+    offset.transformOffset = 0;
+
+    BLASInput input;
+    input.geom.emplace_back(geom); //vector size of 1 because of only 1 geometry per blas
+    input.buildRangeInfo.emplace_back(offset); // vector size of 1 because of only 1 geometry per blas
+
+    return input;
+}
+
+void VulkanEngine::create_bottom_level_as()
+{
+    std::vector<BLASInput> inputs;
+    inputs.reserve(_loadedScenes[sceneString]->meshes.size());
+    for (const auto& mesh : _loadedScenes[sceneString]->meshes) {
+        BLASInput blas = mesh_to_vk_geometry(*mesh.second);
+        //only one geometry per blas for now
+        inputs.emplace_back(blas);
+    }
+    
+    VkDeviceSize allBlasMemSize{0};
+    uint32_t compactionRequests{0};
+    VkDeviceSize maxScratchSize{0};
+
+    std::vector<ASBuildData> asBuilds(inputs.size());
+    for (uint32_t i = 0; i < inputs.size(); i++) {
+        asBuilds[i].buildInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
+        asBuilds[i].buildInfo.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
+        asBuilds[i].buildInfo.flags = inputs[i].flags
+                                    | VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR
+                                    | VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_KHR // should eventually be per model
+                                    | VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR; // should eventually be per model
+        asBuilds[i].buildInfo.geometryCount = static_cast<uint32_t>(inputs[i].geom.size());
+        asBuilds[i].buildInfo.pGeometries = inputs[i].geom.data();
+
+        asBuilds[i].buildRangeInfo = inputs[i].buildRangeInfo;
+
+        std::vector<uint32_t> maxPrimCount(inputs[i].buildRangeInfo.size());
+        for (uint32_t j = 0; j < inputs[i].buildRangeInfo.size(); j++) {
+            maxPrimCount[j] = inputs[i].buildRangeInfo[j].primitiveCount;
+        }
+        vkGetAccelerationStructureBuildSizesKHR(
+            _device, 
+            VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR,
+            &asBuilds[i].buildInfo,
+            maxPrimCount.data(), 
+            &asBuilds[i].sizeInfo
+        );
+
+        allBlasMemSize += asBuilds[i].sizeInfo.accelerationStructureSize;
+        maxScratchSize = std::max(maxScratchSize, asBuilds[i].sizeInfo.buildScratchSize);
+        if (asBuilds[i].buildInfo.flags & VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR) {
+            compactionRequests++;
+        }
+    }
+    if (maxScratchSize % _asProperties.minAccelerationStructureScratchOffsetAlignment != 0) {
+        maxScratchSize += (maxScratchSize % _asProperties.minAccelerationStructureScratchOffsetAlignment);
+    }
+    AllocatedBuffer scratchBuffer = create_buffer(
+        maxScratchSize, 
+        VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, 
+        VMA_MEMORY_USAGE_GPU_ONLY,
+        VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT
+    );
+    VkBufferDeviceAddressInfo bufferInfo{VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO, nullptr, scratchBuffer.buffer};
+    VkDeviceAddress scratchAddress = vkGetBufferDeviceAddress(_device, &bufferInfo);
+
+    VkQueryPool queryPool{VK_NULL_HANDLE};
+    if (compactionRequests > 0) {
+        assert(compactionRequests == asBuilds.size());
+        VkQueryPoolCreateInfo info{};
+        info.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
+        info.queryCount = asBuilds.size();
+        info.queryType = VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR;
+        vkCreateQueryPool(_device, &info, nullptr, &queryPool);
+    }
+
+    std::vector<uint32_t> indices;
+    VkDeviceSize batchSize{0};
+    VkDeviceSize batchLimit{256'000'000};
+    for (uint32_t i = 0; i < asBuilds.size(); i++) {
+        indices.push_back(i);
+        batchSize += asBuilds[i].sizeInfo.accelerationStructureSize;
+        if (batchSize >= batchLimit || i == asBuilds.size() - 1) {
+            // build blas
+            if (queryPool) {
+                vkResetQueryPool(_device, queryPool, 0, static_cast<uint32_t>(indices.size()));
+            }
+            uint32_t queryCount{0};
+            immediate_submit([&](VkCommandBuffer cmd) {
+                for (const auto& i : indices) {
+                    VkAccelerationStructureCreateInfoKHR createInfo{};
+                    createInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
+                    createInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
+                    createInfo.size = asBuilds[i].sizeInfo.accelerationStructureSize;
+                    asBuilds[i].as = create_accel_struct(createInfo);
+
+                    asBuilds[i].buildInfo.dstAccelerationStructure = asBuilds[i].as.accel;
+                    asBuilds[i].buildInfo.scratchData.deviceAddress = scratchAddress;
+
+                    std::vector<VkAccelerationStructureBuildRangeInfoKHR*> rangeData;
+                    for (auto& data : asBuilds[i].buildRangeInfo) {
+                        rangeData.emplace_back(&data);
+                    }
+
+                    vkCmdBuildAccelerationStructuresKHR(cmd, 1, &asBuilds[i].buildInfo, rangeData.data());
+                    VkMemoryBarrier barrier{};
+                    barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+                    barrier.srcAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR;
+                    barrier.dstAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR;
+                    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 
+                        VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
+                        0, 1, &barrier, 0, nullptr, 0, nullptr
+                    );
+                    if (queryPool) {
+                        vkCmdWriteAccelerationStructuresPropertiesKHR(
+                            cmd, 1, &asBuilds[i].buildInfo.dstAccelerationStructure,
+                            VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR, queryPool, queryCount++
+                        );
+                    }
+                }
+            });
+            if (queryPool) {
+                // compact blas
+                uint32_t queryCount{0};
+                std::vector<VkDeviceSize> compactSizes(static_cast<uint32_t>(indices.size()));
+                vkGetQueryPoolResults(_device, queryPool, 0, (uint32_t)compactSizes.size(),
+                    compactSizes.size() * sizeof(VkDeviceSize), compactSizes.data(), sizeof(VkDeviceSize),
+                    VK_QUERY_RESULT_WAIT_BIT
+                );
+                for (auto i : indices) {
+                    asBuilds[i].cleanupAS = asBuilds[i].as;
+                    asBuilds[i].sizeInfo.accelerationStructureSize = compactSizes[queryCount++];
+
+                    VkAccelerationStructureCreateInfoKHR createInfo{};
+                    createInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
+                    createInfo.size = asBuilds[i].sizeInfo.accelerationStructureSize;
+                    createInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
+                    asBuilds[i].as = create_accel_struct(createInfo);
+                }
+                immediate_submit([&](VkCommandBuffer cmd) {
+                    for (auto i : indices) {
+                        VkCopyAccelerationStructureInfoKHR copyInfo{};
+                        copyInfo.sType = VK_STRUCTURE_TYPE_COPY_ACCELERATION_STRUCTURE_INFO_KHR;
+                        copyInfo.src = asBuilds[i].buildInfo.dstAccelerationStructure;
+                        copyInfo.dst = asBuilds[i].as.accel;
+                        copyInfo.mode = VK_COPY_ACCELERATION_STRUCTURE_MODE_COMPACT_KHR;
+                        
+                        vkCmdCopyAccelerationStructureKHR(cmd, &copyInfo);
+                   }
+                });
+                // destroy noncompactblas
+                for (auto& blas : asBuilds) {
+                    destroy_accel_struct(blas.cleanupAS);
+                }
+            }
+            batchSize = 0;
+            indices.clear();
+        }
+    }
+    for (auto& b : asBuilds) {
+        _blas.emplace_back(b.as);
+    }
+
+    _mainDeletionQueue.push_function([&](){
+        for (auto& b : _blas) {
+            destroy_accel_struct(b);
+        }
+    });
+    vkDestroyQueryPool(_device, queryPool, nullptr);
+    destroy_buffer(scratchBuffer);
+}
+
 void GLTFMetallic_Roughness::build_pipelines(VulkanEngine* engine)
 {
     VkShaderModule meshFragShader;
-    if (!vkutil::load_shader_module("shaders/pbr.frag.spv", engine->_device, &meshFragShader)) {
+    if (!vkutil::load_shader_module("../shaders/pbr.frag.spv", engine->_device, &meshFragShader)) {
         std::cout << "Error when building the triangle fragment shader module" << std::endl;
     }
 
     VkShaderModule meshVertShader;
-    if (!vkutil::load_shader_module("shaders/pbr.vert.spv", engine->_device, &meshVertShader)) {
+    if (!vkutil::load_shader_module("../shaders/pbr.vert.spv", engine->_device, &meshVertShader)) {
         std::cout << "Error when building the triangle vertex shader module" << std::endl; 
     }
 

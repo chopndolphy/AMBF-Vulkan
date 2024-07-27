@@ -3,11 +3,12 @@
 
 #include <fstream>
 
-bool vkutil::load_shader_module(const char* filePath, VkDevice device, VkShaderModule* outShaderModule)
+bool vkutil::load_shader_module(std::filesystem::path filePath, VkDevice device, VkShaderModule* outShaderModule)
 {
 	std::ifstream file(filePath, std::ios::ate | std::ios::binary);
 
 	if (!file.is_open()) {
+		std::cout << filePath << " failed to open." << std::endl;
 		return false;
 	}
 

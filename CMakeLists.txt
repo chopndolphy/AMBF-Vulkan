@@ -3,6 +3,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_FLAGS_DEBUG "-O2 -Wall -Wextra -pedantic -g")
 set(CMAKE_CXX_FLAGS_RELEASE "-DNDEBUG -O3")
+set(ENV{CMAKE_BUILD_TYPE} Debug)
 
 
 project(ambf_engine VERSION 1.0)
@@ -16,18 +17,13 @@ file(GLOB_RECURSE IMGUI_SRC_FILES ${LIB}/imgui/*.cpp)
 file(GLOB_RECURSE SRC_FILES ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp)
 add_executable(ambf_engine ${CMAKE_CURRENT_SOURCE_DIR}/src/ambf_engine.cpp ${SRC_FILES} ${IMGUI_SRC_FILES})
 target_include_directories(ambf_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include ${LIB}/imgui)
+target_compile_definitions(ambf_engine PUBLIC IMGUI_IMPL_VULKAN_USE_VOLK)
 
 
 ## INCLUDE LIBRARIES
 add_subdirectory(${LIB}/fastgltf)
-set(FASTGLTF_INCLUDE_DIR ${LIB}/fastgltf/include)
-set(FASTGLTF_SIMDJSON_INCLUDE_DIR ${LIB}/fastgltf/deps/simdjson)
-target_include_directories(ambf_engine PUBLIC ${FASTGLTF_INCLUDE_DIR})
-target_include_directories(ambf_engine PUBLIC ${FASTGLTF_SIMDJSON_INCLUDE_DIR})
-
-add_subdirectory(${LIB}/fmt)
-set(FMT_INCLUDE_DIR ${LIB}/fmt/include)
-target_include_directories(ambf_engine PUBLIC ${FMT_INCLUDE_DIR})
+target_link_libraries(ambf_engine PUBLIC fastgltf::fastgltf)
+target_include_directories(ambf_engine INTERFACE ${LIB}/fastgltf/include)
 
 set(GLM_INCLUDE_DIR ${LIB}/glm/glm)
 target_include_directories(ambf_engine PUBLIC ${GLM_INCLUDE_DIR})
@@ -37,24 +33,26 @@ set(STB_IMAGE_INCLUDE_DIR ${LIB}/stb_image)
 target_include_directories(ambf_engine PUBLIC ${STB_IMAGE_INCLUDE_DIR})
 
 add_subdirectory(${LIB}/vkbootstrap)
-set(VKBOOTSTRAP_INCLUDE_DIR ${LIB}/vkbootstrap/src)
-target_include_directories(ambf_engine PUBLIC ${VKBOOTSTRAP_INCLUDE_DIR})
+target_link_libraries(ambf_engine PUBLIC vk-bootstrap::vk-bootstrap)
 
 set(VMA_INCLUDE_DIR ${LIB}/vma)
 target_include_directories(ambf_engine PUBLIC ${VMA_INCLUDE_DIR})
 
-## LINK LIBRARIES
-find_library(FASTGLTF fastgltf PATHS ${LIB}/fastgltf/build)
-target_link_libraries(ambf_engine PUBLIC ${FASTGLTF})
+set(INTERPROCESS_INCLUDE_DIR ${LIB}/boost)
+target_include_directories(ambf_engine PUBLIC ${INTERPROCESS_INCLUDE_DIR})
+target_compile_definitions(ambf_engine PUBLIC BOOST_DATE_TIME_NO_LIB)
 
-find_library(FASTGLTF_SIMDJSON fastgltf_simdjson PATHS ${LIB}/fastgltf/build)
-target_link_libraries(ambf_engine PUBLIC ${FASTGLTF_SIMDJSON})
+# if (WIN32)
+#     set(VOLK_STATIC_DEFINES VK_USE_PLATFORM_WIN32_KHR)
+# elseif (UNIX)
+#     set(VOLK_STATIC_DEFINES VK_USE_PLATFORM_XLIB_KHR)
+# endif()
+add_subdirectory(${LIB}/volk)
+target_link_libraries(ambf_engine PRIVATE volk)
 
-find_library(FMT fmt PATHS ${LIB}/fmt/build)
-target_link_libraries(ambf_engine PUBLIC ${FMT})
-
-find_library(VKBOOTSTRAP vk-bootstrap PATHS ${LIB}/vkbootstrap/build)
-target_link_libraries(ambf_engine PUBLIC ${VKBOOTSTRAP})
+################################################################################################################################
+## SDL2 
+################################################################################################################################
 
 # 1. Look for a SDL2 package, 2. look for the SDL2 component and 3. fail if none can be found
 find_package(SDL2 REQUIRED CONFIG REQUIRED COMPONENTS SDL2)
@@ -70,6 +68,9 @@ endif()
 
 # Link to the actual SDL2 library. SDL2::SDL2 is the shared SDL library, SDL2::SDL2-static is the static SDL libarary.
 target_link_libraries(ambf_engine PRIVATE SDL2::SDL2)
+###############################################################################################################################
+
+###############################################################################################################################
 
 find_library(VULKAN vulkan)
 target_link_libraries(ambf_engine PUBLIC ${VULKAN})
@@ -91,8 +92,3 @@ target_link_libraries(ambf_engine PUBLIC ${XI})
 
 find_library(DL dl)
 target_link_libraries(ambf_engine PUBLIC ${DL})
-
-
-
-
-

@@ -11,6 +11,7 @@
 #include <fastgltf/tools.hpp>
 #include <fastgltf/util.hpp>
 
+
 #include <iostream>
  
 void LoadedGLTF::Draw(const glm::mat4& topMatrix, DrawContext& ctx)
@@ -300,6 +301,7 @@ std::optional<std::shared_ptr<LoadedGLTF>> vkutil::load_gltf(VulkanEngine* engin
 		}
 
 		newMesh->meshBuffers = engine->uploadMesh(indices, vertices);
+		newMesh->vertexCount = vertices.size();
 	}
 
 	for (fastgltf::Node& node : gltf.nodes) {

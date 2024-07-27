@@ -17,6 +17,13 @@
 #include <deque>
 #include <functional>
 #include <unordered_map>
+#include <memory>
+
+#include <imgui.h>
+#include <imgui_impl_sdl2.h>
+#include <imgui_impl_vulkan.h>
+
+#define AMBF_BUILD_DIR @AMBF_BUILD_DIR@
 
 struct EngineStats {
 	float frame_time;
@@ -25,6 +32,11 @@ struct EngineStats {
 	float scene_update_time;
 	float mesh_draw_time;
 	glm::vec3 camera_location;
+};
+
+struct GUITransform {
+	float guiTransform[3];
+	float guiSunDir[3];
 };
 
 struct ComputePushConstants {
@@ -54,9 +66,9 @@ struct DeletionQueue {
 
 	void flush()
 	{
-		for (auto it = deletors.rbegin(); it != deletors.rend(); it++)
+		for (auto func : deletors)
 		{
-			(*it)();
+			func();
 		}
 
 		deletors.clear();
@@ -128,6 +140,21 @@ struct GLTFMetallic_Roughness {
 	void clear_resources(VkDevice device);
 
 	MaterialInstance write_material(VkDevice device, MaterialPass pass, const MaterialResources& resources, DescriptorAllocatorGrowable& descriptorAllocator);
+};
+
+struct BLASInput {
+	std::vector<VkAccelerationStructureGeometryKHR> geom;
+	std::vector<VkAccelerationStructureBuildRangeInfoKHR> buildRangeInfo;
+	VkBuildAccelerationStructureFlagsKHR flags{0};
+};
+struct ASBuildData {
+	VkAccelerationStructureTypeKHR type = VK_ACCELERATION_STRUCTURE_TYPE_MAX_ENUM_KHR;
+	std::vector<VkAccelerationStructureGeometryKHR> geom;
+	std::vector<VkAccelerationStructureBuildRangeInfoKHR> buildRangeInfo;
+	VkAccelerationStructureBuildGeometryInfoKHR buildInfo{VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR};
+	VkAccelerationStructureBuildSizesInfoKHR sizeInfo{VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR};
+	AllocatedAS as;
+	AllocatedAS cleanupAS;
 };
 
 constexpr unsigned int FRAME_OVERLAP = 2;
@@ -231,11 +258,26 @@ public:
 
 	EngineStats _stats;
 
+	VkPhysicalDeviceRayTracingPipelinePropertiesKHR _rtProperties{};
+	VkPhysicalDeviceAccelerationStructurePropertiesKHR _asProperties{};
+	std::vector<AllocatedAS> _tlas;
+	std::vector<AllocatedAS> _blas;
+	std::shared_ptr<ImGuiIO> _io;
+	GUITransform _guiTransform{};
+	uint32_t buffersCreated{};
+	uint32_t buffersDestroyed{};
+	uint32_t imagesCreated{};
+	uint32_t imagesDestroyed{};
+	VkPushConstantRange _computePushConstantRange{};
+
 	AllocatedBuffer create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage);
-	void destroy_buffer(const AllocatedBuffer &buffer); 
-	AllocatedImage create_image(VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped = false);
+    AllocatedBuffer create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage, VmaAllocationCreateFlagBits allocFlags);
+    void destroy_buffer(const AllocatedBuffer &buffer);
+    AllocatedImage create_image(VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped = false);
 	AllocatedImage create_image(void* data, VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped = false);
 	void destroy_image(const AllocatedImage& img);
+	AllocatedAS create_accel_struct(const VkAccelerationStructureCreateInfoKHR& accel);
+	void destroy_accel_struct(AllocatedAS& accel);
 	
 
 private:
@@ -251,6 +293,10 @@ private:
 	void init_default_data();
 	void init_renderables();
 	void init_post_process_pipelines();
+	void init_ray_tracing();
+	BLASInput mesh_to_vk_geometry(const MeshAsset &obj);
+	void create_bottom_level_as();
+
 
 	void create_swapchain(uint32_t width, uint32_t hegiht);
 	void destroy_swapchain();

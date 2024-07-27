@@ -10,25 +10,25 @@
 #include <array>
 #include <functional>
 #include <deque>
+#include <iostream>
+#include <filesystem>
 
-#include <vulkan/vulkan.h>
+#include <volk.h>
 #include <vulkan/vk_enum_string_helper.h>
 #include <vk_mem_alloc.h>
-
-#include <fmt/core.h>
 
 #include <glm/mat4x4.hpp>
 #include <glm/vec4.hpp>
 
 #include "defines.h"
  
-#define VK_CHECK(x)                                                     \
-    do {                                                                \
-        VkResult err = x;                                               \
-        if (err) {                                                      \
-            fmt::println("Detected Vulkan error: {}", string_VkResult(err)); \
-            abort();                                                    \
-        }                                                               \
+#define VK_CHECK(x)                                                                      \
+    do {                                                                                 \
+        VkResult err = x;                                                                \
+        if (err) {                                                                       \
+            std::cout << "Detected Vulkan error: " << string_VkResult(err) << std::endl; \
+            abort();                                                                     \
+        }                                                                                \
     } while (0)
 
 class VulkanEngine;
@@ -45,6 +45,12 @@ struct AllocatedBuffer {
     VkBuffer buffer;
     VmaAllocation allocation;
     VmaAllocationInfo info;
+};
+
+struct AllocatedAS {
+	VkAccelerationStructureKHR accel = VK_NULL_HANDLE;
+	AllocatedBuffer buffer;
+	VkDeviceAddress address{0};
 };
 
 struct Vertex {
@@ -96,7 +102,7 @@ struct GPUSceneData {
 	glm::vec4 sunlightColor;
 	glm::vec4 cameraPos;
 };
- 
+
 struct DrawContext;
 
 class IRenderable {
