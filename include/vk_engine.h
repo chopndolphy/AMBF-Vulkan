@@ -271,7 +271,7 @@ public:
 	uint32_t imagesDestroyed{};
 	VkPushConstantRange _computePushConstantRange{};
 	std::shared_ptr<Interprocess> _interprocess;
-	float _ipOut = 0.0f;
+	IPCTransform _ipOut{};
 
 	AllocatedBuffer create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage);
     AllocatedBuffer create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage, VmaAllocationCreateFlagBits allocFlags);

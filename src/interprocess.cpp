@@ -12,9 +12,9 @@ Interprocess::Interprocess()
 
     _alloc = std::make_shared<ShmemAllocator>(_segment.get_segment_manager());
 
-    _map = _segment.construct<MySHMMap>("MySHMMapName")(std::less<int>(), *_alloc);
+    _map = _segment.construct<ShmemMap>("IPCTransformMap")(std::less<unsigned int>(), *_alloc);
 
-    _map->insert(std::pair<const int, float>(0, (float)0));
+    _map->insert(ValueType(0, IPCTransform{}));
 }
 
 void Interprocess::destroy()

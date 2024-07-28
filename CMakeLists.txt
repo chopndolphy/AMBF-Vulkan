@@ -19,6 +19,7 @@ add_executable(ambf_engine ${CMAKE_CURRENT_SOURCE_DIR}/src/ambf_engine.cpp ${SRC
 target_include_directories(ambf_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include ${LIB}/imgui)
 target_compile_definitions(ambf_engine PUBLIC IMGUI_IMPL_VULKAN_USE_VOLK)
 
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/ipc_test_client)
 
 ## INCLUDE LIBRARIES
 add_subdirectory(${LIB}/fastgltf)

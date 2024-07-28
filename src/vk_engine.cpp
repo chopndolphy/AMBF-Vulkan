@@ -7,6 +7,7 @@
 #include "vk_loader.h"
 #include "vk_descriptors.h"
 #include <glm/gtx/transform.hpp>
+#include <glm/gtx/euler_angles.hpp>
 
 #define VMA_IMPLEMENTATION
 #include <vk_mem_alloc.h>
@@ -96,7 +97,7 @@ void VulkanEngine::init()
      
     init_interprocess();
 
-    init_ray_tracing();
+    // init_ray_tracing();
 
     init_imgui();
 
@@ -518,33 +519,33 @@ void VulkanEngine::init_vulkan()
     features10.samplerAnisotropy = true;
     features10.sampleRateShading = true;
 
-    VkPhysicalDevicePageableDeviceLocalMemoryFeaturesEXT pdlmFeatures{};
-    pdlmFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PAGEABLE_DEVICE_LOCAL_MEMORY_FEATURES_EXT;
-    pdlmFeatures.pageableDeviceLocalMemory = true;
+    // VkPhysicalDevicePageableDeviceLocalMemoryFeaturesEXT pdlmFeatures{};
+    // pdlmFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PAGEABLE_DEVICE_LOCAL_MEMORY_FEATURES_EXT;
+    // pdlmFeatures.pageableDeviceLocalMemory = true;
 
-    VkPhysicalDeviceAccelerationStructureFeaturesKHR accelStrucFeatures{};
-    accelStrucFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
-    accelStrucFeatures.accelerationStructure = true;
-    accelStrucFeatures.accelerationStructureCaptureReplay = true;
+    // VkPhysicalDeviceAccelerationStructureFeaturesKHR accelStrucFeatures{};
+    // accelStrucFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
+    // accelStrucFeatures.accelerationStructure = true;
+    // accelStrucFeatures.accelerationStructureCaptureReplay = true;
 
-    VkPhysicalDeviceRayQueryFeaturesKHR rayQuerFeatures{};
-    rayQuerFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR;
-    rayQuerFeatures.rayQuery = true;
+    // VkPhysicalDeviceRayQueryFeaturesKHR rayQuerFeatures{};
+    // rayQuerFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR;
+    // rayQuerFeatures.rayQuery = true;
 
-    VkPhysicalDeviceRayTracingMaintenance1FeaturesKHR rtMaintFeatures{};
-    rtMaintFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_MAINTENANCE_1_FEATURES_KHR;
-    rtMaintFeatures.rayTracingMaintenance1 = true;
-    rtMaintFeatures.rayTracingPipelineTraceRaysIndirect2 = true;
+    // VkPhysicalDeviceRayTracingMaintenance1FeaturesKHR rtMaintFeatures{};
+    // rtMaintFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_MAINTENANCE_1_FEATURES_KHR;
+    // rtMaintFeatures.rayTracingMaintenance1 = true;
+    // rtMaintFeatures.rayTracingPipelineTraceRaysIndirect2 = true;
 
-    VkPhysicalDeviceRayTracingPipelineFeaturesKHR rtPipeFeatures {};
-    rtPipeFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR;
-    rtPipeFeatures.rayTracingPipeline = true;
-    rtPipeFeatures.rayTracingPipelineTraceRaysIndirect = true;
-    rtPipeFeatures.rayTraversalPrimitiveCulling = true;
+    // VkPhysicalDeviceRayTracingPipelineFeaturesKHR rtPipeFeatures {};
+    // rtPipeFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR;
+    // rtPipeFeatures.rayTracingPipeline = true;
+    // rtPipeFeatures.rayTracingPipelineTraceRaysIndirect = true;
+    // rtPipeFeatures.rayTraversalPrimitiveCulling = true;
     
-    VkPhysicalDeviceRayTracingPositionFetchFeaturesKHR rtPosFetchFeatures{};
-    rtPosFetchFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_POSITION_FETCH_FEATURES_KHR;
-    rtPosFetchFeatures.rayTracingPositionFetch = true;
+    // VkPhysicalDeviceRayTracingPositionFetchFeaturesKHR rtPosFetchFeatures{};
+    // rtPosFetchFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_POSITION_FETCH_FEATURES_KHR;
+    // rtPosFetchFeatures.rayTracingPositionFetch = true;
 
     vkb::PhysicalDeviceSelector selector{ vkb_inst };
     vkb::PhysicalDevice physicalDevice = selector
@@ -553,20 +554,20 @@ void VulkanEngine::init_vulkan()
         .set_required_features_12(features12)
         .set_required_features(features10)
         .set_surface(_surface)
-        .add_desired_extension("VK_KHR_deferred_host_operations")
-        .add_desired_extension("VK_EXT_pageable_device_local_memory")
-        .add_desired_extension("VK_EXT_memory_priority")
-        .add_desired_extension("VK_KHR_acceleration_structure")
-        .add_desired_extension("VK_KHR_ray_query")
-        .add_desired_extension("VK_KHR_ray_tracing_maintenance1")
-        .add_desired_extension("VK_KHR_ray_tracing_pipeline")
-        .add_desired_extension("VK_KHR_ray_tracing_position_fetch")
-        .add_required_extension_features(pdlmFeatures)
-        .add_required_extension_features(accelStrucFeatures)
-        .add_required_extension_features(rayQuerFeatures)
-        .add_required_extension_features(rtMaintFeatures)
-        .add_required_extension_features(rtPipeFeatures)
-        .add_required_extension_features(rtPosFetchFeatures)
+        // .add_desired_extension("VK_KHR_deferred_host_operations")
+        // .add_desired_extension("VK_EXT_pageable_device_local_memory")
+        // .add_desired_extension("VK_EXT_memory_priority")
+        // .add_desired_extension("VK_KHR_acceleration_structure")
+        // .add_desired_extension("VK_KHR_ray_query")
+        // .add_desired_extension("VK_KHR_ray_tracing_maintenance1")
+        // .add_desired_extension("VK_KHR_ray_tracing_pipeline")
+        // .add_desired_extension("VK_KHR_ray_tracing_position_fetch")
+        // .add_required_extension_features(pdlmFeatures)
+        // .add_required_extension_features(accelStrucFeatures)
+        // .add_required_extension_features(rayQuerFeatures)
+        // .add_required_extension_features(rtMaintFeatures)
+        // .add_required_extension_features(rtPipeFeatures)
+        // .add_required_extension_features(rtPosFetchFeatures)
         .select()
         .value();
 
@@ -584,14 +585,14 @@ void VulkanEngine::init_vulkan()
     _graphicsQueue = vkbDevice.get_queue(vkb::QueueType::graphics).value();
     _graphicsQueueFamily = vkbDevice.get_queue_index(vkb::QueueType::graphics).value();
 
-    _rtProperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR;
-    _rtProperties.pNext = &_asProperties;
-    _asProperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_PROPERTIES_KHR;
+    // _rtProperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR;
+    // _rtProperties.pNext = &_asProperties;
+    // _asProperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_PROPERTIES_KHR;
 
-    VkPhysicalDeviceProperties2 prop2{};
-    prop2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
-    prop2.pNext = &_rtProperties;
-    vkGetPhysicalDeviceProperties2(_chosenGPU, &prop2);
+    // VkPhysicalDeviceProperties2 prop2{};
+    // prop2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+    // prop2.pNext = &_rtProperties;
+    // vkGetPhysicalDeviceProperties2(_chosenGPU, &prop2);
 
     VmaVulkanFunctions vmaVulkanFunc{};
     vmaVulkanFunc.vkGetInstanceProcAddr = vkGetInstanceProcAddr;
@@ -1518,13 +1519,12 @@ void VulkanEngine::update_scene()
     _sceneData.proj[1][1] *= 1; //might need to change to -1
     _sceneData.viewproj = _sceneData.proj * _sceneData.view;
 
-    glm::mat4 translate{1.0f}; 
-    MySHMMap::iterator iter;
-    boost::interprocess::offset_ptr<MySHMMap> point = _interprocess->_segment.find<MySHMMap>("MySHMMapName").first;
-    iter = point->begin();
-    _ipOut = iter->second;
+    _ipOut = _interprocess->_map->at(0);
+    glm::mat4 transform{1.0};
+    glm::translate(transform, glm::vec3(_ipOut.position[0], _ipOut.position[1], _ipOut.position[2]));
+    transform = glm::yawPitchRoll(_ipOut.rotation[0], _ipOut.rotation[1], _ipOut.rotation[2]) * transform;
     for (std::shared_ptr<Node> node : _loadedScenes[sceneString]->topNodes) {
-        node->refreshTransform(glm::translate(translate, glm::vec3(_ipOut, 0.0f, 0.0f)));
+        node->refreshTransform(transform);
     }
     
     _loadedScenes[sceneString]->Draw(glm::mat4{ 1.0f }, _mainDrawContext);
