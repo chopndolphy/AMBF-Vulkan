@@ -158,6 +158,11 @@ struct ASBuildData {
 	AllocatedAS cleanupAS;
 };
 
+struct MeshInstance {
+	glm::mat4 transform;
+	uint32_t meshIndex{0};
+};
+
 constexpr unsigned int FRAME_OVERLAP = 2;
 
 class VulkanEngine {
@@ -237,7 +242,7 @@ public:
 	VkPipeline _postProcessingPipeline;
 	AllocatedImage _postProcessingImage;
 	VkDescriptorSet _postProcessingDescriptors;
-	
+
 	AllocatedImage _msaaDrawImage;
 	AllocatedImage _msaaDepthImage;
 
@@ -263,15 +268,24 @@ public:
 	VkPhysicalDeviceAccelerationStructurePropertiesKHR _asProperties{};
 	std::vector<AllocatedAS> _tlas;
 	std::vector<AllocatedAS> _blas;
-	std::shared_ptr<ImGuiIO> _io;
+	std::vector<MeshInstance> _instances;
+	VkDescriptorSetLayout _rtDescriptorSetLayout;
+	VkDescriptorSet _rtDescriptorSet;
+	AllocatedImage _rtDrawImage;
+	AllocatedImage _rtDepthImage;
+
 	GUITransform _guiTransform{};
+	std::shared_ptr<Interprocess> _interprocess;
+	IPCTransform _ipOut{};
+
+	std::shared_ptr<ImGuiIO> _io;
+
 	uint32_t buffersCreated{};
 	uint32_t buffersDestroyed{};
 	uint32_t imagesCreated{};
 	uint32_t imagesDestroyed{};
+
 	VkPushConstantRange _computePushConstantRange{};
-	std::shared_ptr<Interprocess> _interprocess;
-	IPCTransform _ipOut{};
 
 	AllocatedBuffer create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage);
     AllocatedBuffer create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage, VmaAllocationCreateFlagBits allocFlags);
@@ -296,9 +310,15 @@ private:
 	void init_default_data();
 	void init_renderables();
 	void init_post_process_pipelines();
+
 	void init_ray_tracing();
+	void cleanup_ray_tracing();
 	BLASInput mesh_to_vk_geometry(const MeshAsset &obj);
 	void create_bottom_level_as();
+	void create_top_level_as();
+	void create_rt_descriptor_set();
+	void write_rt_descriptor_set();
+
 	void init_interprocess();
 
 
@@ -317,4 +337,5 @@ private:
 };
 namespace vkutil {
 	bool is_visible(const RenderObject& obj, const glm::mat4& viewProj);
+	VkTransformMatrixKHR toTransformMatrixKHR(const glm::mat4& matrix);
 }

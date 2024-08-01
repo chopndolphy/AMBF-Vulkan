@@ -95,9 +95,9 @@ void VulkanEngine::init()
 
     init_renderables();
      
-    init_interprocess();
+    // init_interprocess();
 
-    // init_ray_tracing();
+    init_ray_tracing();
 
     init_imgui();
 
@@ -121,6 +121,8 @@ void VulkanEngine::cleanup()
     if (_isInitialized) {
         vkDeviceWaitIdle(_device);
 
+        cleanup_ray_tracing();
+
         for (auto& scene : _loadedScenes) {
             scene.second->clearAll();
         }
@@ -132,7 +134,7 @@ void VulkanEngine::cleanup()
         }
 
         _mainDeletionQueue.flush();
- 
+
         destroy_swapchain();
 
         vkDestroySurfaceKHR(_instance, _surface, nullptr);
@@ -376,21 +378,7 @@ void VulkanEngine::run()
             ImGui::End();
         }
 
-
-        if (ImGui::Begin("Transform"))
-        {
-            ImGui::DragFloat3("Transform", _guiTransform.guiTransform);
-            ImGui::Text("_ipOut: %f", _ipOut);
-
-            ImGui::End();
-        }
-
         ImGui::Render();
-        
-        glm::mat4 translate{1.0f}; 
-        // for (std::shared_ptr<Node> node : _loadedScenes[sceneString]->topNodes) {
-        //     node->refreshTransform(glm::translate(translate, glm::vec3{_guiTransform.guiTransform[0], _guiTransform.guiTransform[1], _guiTransform.guiTransform[2]}));
-        // }
         
         update_scene();
 
@@ -519,33 +507,33 @@ void VulkanEngine::init_vulkan()
     features10.samplerAnisotropy = true;
     features10.sampleRateShading = true;
 
-    // VkPhysicalDevicePageableDeviceLocalMemoryFeaturesEXT pdlmFeatures{};
-    // pdlmFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PAGEABLE_DEVICE_LOCAL_MEMORY_FEATURES_EXT;
-    // pdlmFeatures.pageableDeviceLocalMemory = true;
+    VkPhysicalDevicePageableDeviceLocalMemoryFeaturesEXT pdlmFeatures{};
+    pdlmFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PAGEABLE_DEVICE_LOCAL_MEMORY_FEATURES_EXT;
+    pdlmFeatures.pageableDeviceLocalMemory = true;
 
-    // VkPhysicalDeviceAccelerationStructureFeaturesKHR accelStrucFeatures{};
-    // accelStrucFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
-    // accelStrucFeatures.accelerationStructure = true;
-    // accelStrucFeatures.accelerationStructureCaptureReplay = true;
+    VkPhysicalDeviceAccelerationStructureFeaturesKHR accelStrucFeatures{};
+    accelStrucFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
+    accelStrucFeatures.accelerationStructure = true;
+    accelStrucFeatures.accelerationStructureCaptureReplay = true;
 
-    // VkPhysicalDeviceRayQueryFeaturesKHR rayQuerFeatures{};
-    // rayQuerFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR;
-    // rayQuerFeatures.rayQuery = true;
+    VkPhysicalDeviceRayQueryFeaturesKHR rayQuerFeatures{};
+    rayQuerFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR;
+    rayQuerFeatures.rayQuery = true;
 
-    // VkPhysicalDeviceRayTracingMaintenance1FeaturesKHR rtMaintFeatures{};
-    // rtMaintFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_MAINTENANCE_1_FEATURES_KHR;
-    // rtMaintFeatures.rayTracingMaintenance1 = true;
-    // rtMaintFeatures.rayTracingPipelineTraceRaysIndirect2 = true;
+    VkPhysicalDeviceRayTracingMaintenance1FeaturesKHR rtMaintFeatures{};
+    rtMaintFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_MAINTENANCE_1_FEATURES_KHR;
+    rtMaintFeatures.rayTracingMaintenance1 = true;
+    rtMaintFeatures.rayTracingPipelineTraceRaysIndirect2 = true;
 
-    // VkPhysicalDeviceRayTracingPipelineFeaturesKHR rtPipeFeatures {};
-    // rtPipeFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR;
-    // rtPipeFeatures.rayTracingPipeline = true;
-    // rtPipeFeatures.rayTracingPipelineTraceRaysIndirect = true;
-    // rtPipeFeatures.rayTraversalPrimitiveCulling = true;
+    VkPhysicalDeviceRayTracingPipelineFeaturesKHR rtPipeFeatures {};
+    rtPipeFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR;
+    rtPipeFeatures.rayTracingPipeline = true;
+    rtPipeFeatures.rayTracingPipelineTraceRaysIndirect = true;
+    rtPipeFeatures.rayTraversalPrimitiveCulling = true;
     
-    // VkPhysicalDeviceRayTracingPositionFetchFeaturesKHR rtPosFetchFeatures{};
-    // rtPosFetchFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_POSITION_FETCH_FEATURES_KHR;
-    // rtPosFetchFeatures.rayTracingPositionFetch = true;
+    VkPhysicalDeviceRayTracingPositionFetchFeaturesKHR rtPosFetchFeatures{};
+    rtPosFetchFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_POSITION_FETCH_FEATURES_KHR;
+    rtPosFetchFeatures.rayTracingPositionFetch = true;
 
     vkb::PhysicalDeviceSelector selector{ vkb_inst };
     vkb::PhysicalDevice physicalDevice = selector
@@ -554,20 +542,20 @@ void VulkanEngine::init_vulkan()
         .set_required_features_12(features12)
         .set_required_features(features10)
         .set_surface(_surface)
-        // .add_desired_extension("VK_KHR_deferred_host_operations")
-        // .add_desired_extension("VK_EXT_pageable_device_local_memory")
-        // .add_desired_extension("VK_EXT_memory_priority")
-        // .add_desired_extension("VK_KHR_acceleration_structure")
-        // .add_desired_extension("VK_KHR_ray_query")
-        // .add_desired_extension("VK_KHR_ray_tracing_maintenance1")
-        // .add_desired_extension("VK_KHR_ray_tracing_pipeline")
-        // .add_desired_extension("VK_KHR_ray_tracing_position_fetch")
-        // .add_required_extension_features(pdlmFeatures)
-        // .add_required_extension_features(accelStrucFeatures)
-        // .add_required_extension_features(rayQuerFeatures)
-        // .add_required_extension_features(rtMaintFeatures)
-        // .add_required_extension_features(rtPipeFeatures)
-        // .add_required_extension_features(rtPosFetchFeatures)
+        .add_desired_extension("VK_KHR_deferred_host_operations")
+        .add_desired_extension("VK_EXT_pageable_device_local_memory")
+        .add_desired_extension("VK_EXT_memory_priority")
+        .add_desired_extension("VK_KHR_acceleration_structure")
+        .add_desired_extension("VK_KHR_ray_query")
+        .add_desired_extension("VK_KHR_ray_tracing_maintenance1")
+        .add_desired_extension("VK_KHR_ray_tracing_pipeline")
+        .add_desired_extension("VK_KHR_ray_tracing_position_fetch")
+        .add_required_extension_features(pdlmFeatures)
+        .add_required_extension_features(accelStrucFeatures)
+        .add_required_extension_features(rayQuerFeatures)
+        .add_required_extension_features(rtMaintFeatures)
+        .add_required_extension_features(rtPipeFeatures)
+        .add_required_extension_features(rtPosFetchFeatures)
         .select()
         .value();
 
@@ -585,14 +573,14 @@ void VulkanEngine::init_vulkan()
     _graphicsQueue = vkbDevice.get_queue(vkb::QueueType::graphics).value();
     _graphicsQueueFamily = vkbDevice.get_queue_index(vkb::QueueType::graphics).value();
 
-    // _rtProperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR;
-    // _rtProperties.pNext = &_asProperties;
-    // _asProperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_PROPERTIES_KHR;
+    _rtProperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR;
+    _rtProperties.pNext = &_asProperties;
+    _asProperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_PROPERTIES_KHR;
 
-    // VkPhysicalDeviceProperties2 prop2{};
-    // prop2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
-    // prop2.pNext = &_rtProperties;
-    // vkGetPhysicalDeviceProperties2(_chosenGPU, &prop2);
+    VkPhysicalDeviceProperties2 prop2{};
+    prop2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+    prop2.pNext = &_rtProperties;
+    vkGetPhysicalDeviceProperties2(_chosenGPU, &prop2);
 
     VmaVulkanFunctions vmaVulkanFunc{};
     vmaVulkanFunc.vkGetInstanceProcAddr = vkGetInstanceProcAddr;
@@ -651,7 +639,7 @@ void VulkanEngine::init_swapchain()
     mrview_info.components.b = VK_COMPONENT_SWIZZLE_B;
     mrview_info.components.a = VK_COMPONENT_SWIZZLE_A;
     VK_CHECK(vkCreateImageView(_device, &mrview_info, nullptr, &_msaaDrawImage.imageView));
- 
+
     _depthImage.imageFormat = VK_FORMAT_D32_SFLOAT;
     _depthImage.imageExtent = drawImageExtent;
     VkImageUsageFlags depthImageUsages{};
@@ -696,6 +684,33 @@ void VulkanEngine::init_swapchain()
     VkImageViewCreateInfo pview_info = vkinit::imageview_create_info(_postProcessingImage.imageFormat, _postProcessingImage.image, VK_IMAGE_ASPECT_COLOR_BIT); 
     VK_CHECK(vkCreateImageView(_device, &pview_info, nullptr, &_postProcessingImage.imageView));
 
+    _rtDrawImage.imageFormat = VK_FORMAT_R32G32B32A32_SFLOAT;
+    _rtDrawImage.imageExtent = drawImageExtent; 
+    VkImageUsageFlags rtDrawImageUsages{};
+    rtDrawImageUsages |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+    rtDrawImageUsages |= VK_IMAGE_USAGE_STORAGE_BIT;
+    rtDrawImageUsages |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    rtDrawImageUsages |= VK_IMAGE_USAGE_SAMPLED_BIT;
+    VkImageCreateInfo rtrimg_info = vkinit::image_create_info(_rtDrawImage.imageFormat, rtDrawImageUsages, drawImageExtent); 
+    VmaAllocationCreateInfo rtrimg_allocinfo = {};
+    rtrimg_allocinfo.usage = VMA_MEMORY_USAGE_UNKNOWN;
+    rtrimg_allocinfo.requiredFlags = VkMemoryPropertyFlags(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT); 
+    vmaCreateImage(_allocator, &rtrimg_info, &rtrimg_allocinfo, &_rtDrawImage.image, &_rtDrawImage.allocation, nullptr); 
+    VkImageViewCreateInfo rtrview_info = vkinit::imageview_create_info(_rtDrawImage.imageFormat, _rtDrawImage.image, VK_IMAGE_ASPECT_COLOR_BIT); 
+    VK_CHECK(vkCreateImageView(_device, &rtrview_info, nullptr, &_rtDrawImage.imageView));
+
+    _rtDepthImage.imageFormat = VK_FORMAT_X8_D24_UNORM_PACK32;
+    _rtDepthImage.imageExtent = drawImageExtent;
+    VkImageUsageFlags rtDepthImageUsages{};
+    rtDepthImageUsages |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT; 
+    VkImageCreateInfo rtdimg_info = vkinit::image_create_info(_rtDepthImage.imageFormat, rtDepthImageUsages, drawImageExtent); 
+    VmaAllocationCreateInfo rtdimg_allocinfo = {};
+    rtdimg_allocinfo.usage = VMA_MEMORY_USAGE_UNKNOWN;
+    rtdimg_allocinfo.requiredFlags = VkMemoryPropertyFlags(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT); 
+    vmaCreateImage(_allocator, &rtdimg_info, &rtdimg_allocinfo, &_rtDepthImage.image, &_rtDepthImage.allocation, nullptr); 
+    VkImageViewCreateInfo rtdview_info = vkinit::imageview_create_info(_rtDepthImage.imageFormat, _rtDepthImage.image, VK_IMAGE_ASPECT_DEPTH_BIT); 
+    VK_CHECK(vkCreateImageView(_device, &rtdview_info, nullptr, &_rtDepthImage.imageView));
+
     _mainDeletionQueue.push_function([=]() {
         vkDestroyImageView(_device, _drawImage.imageView, nullptr);
         vmaDestroyImage(_allocator, _drawImage.image, _drawImage.allocation);
@@ -711,6 +726,12 @@ void VulkanEngine::init_swapchain()
 
         vkDestroyImageView(_device, _postProcessingImage.imageView, nullptr);
         vmaDestroyImage(_allocator, _postProcessingImage.image, _postProcessingImage.allocation);
+
+        vkDestroyImageView(_device, _rtDrawImage.imageView, nullptr);
+        vmaDestroyImage(_allocator, _rtDrawImage.image, _rtDrawImage.allocation);
+
+        vkDestroyImageView(_device, _rtDepthImage.imageView, nullptr);
+        vmaDestroyImage(_allocator, _rtDepthImage.image, _rtDepthImage.allocation);
     });
 }
 void VulkanEngine::init_commands()
@@ -770,6 +791,7 @@ void VulkanEngine::init_descriptors()
 {
     std::vector<DescriptorAllocatorGrowable::PoolSizeRatio> sizes =
     {
+        { VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 3 },
         { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 3 },
         { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 3 },
         { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 3 },
@@ -791,7 +813,13 @@ void VulkanEngine::init_descriptors()
     {
         DescriptorLayoutBuilder builder;
         builder.add_binding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
-        _gpuSceneDataDescriptorLayout = builder.build(_device, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT);
+        _gpuSceneDataDescriptorLayout = builder.build(
+            _device,
+            VK_SHADER_STAGE_VERTEX_BIT
+            | VK_SHADER_STAGE_FRAGMENT_BIT
+            | VK_SHADER_STAGE_RAYGEN_BIT_KHR 
+            | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR
+        );
     }
 
     _mainDeletionQueue.push_function([&]() {
@@ -811,6 +839,7 @@ void VulkanEngine::init_descriptors()
     for (int i = 0; i < FRAME_OVERLAP; i++) {
 
         std::vector<DescriptorAllocatorGrowable::PoolSizeRatio> frame_sizes = {
+            { VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 3 },
             { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 3 },
             { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 3 },
             { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3 },
@@ -825,6 +854,8 @@ void VulkanEngine::init_descriptors()
             _frames[i]._frameDescriptors.destroy_pools(_device);
         });
     } 
+
+    create_rt_descriptor_set();
 }
 void VulkanEngine::init_pipelines()
 {
@@ -1324,6 +1355,9 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
                 vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, r.material->pipeline->pipeline);
                 vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, r.material->pipeline->layout,
                     0, 1, &globalDescriptor, 0, nullptr);
+                
+                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, r.material->pipeline->layout,
+                    2, 1, &_rtDescriptorSet, 0, nullptr);
 
                 VkViewport viewport = {};
                 viewport.x = 0;
@@ -1519,13 +1553,13 @@ void VulkanEngine::update_scene()
     _sceneData.proj[1][1] *= 1; //might need to change to -1
     _sceneData.viewproj = _sceneData.proj * _sceneData.view;
 
-    _ipOut = _interprocess->_map->at(0);
-    glm::mat4 transform{1.0};
-    glm::translate(transform, glm::vec3(_ipOut.position[0], _ipOut.position[1], _ipOut.position[2]));
-    transform = glm::yawPitchRoll(_ipOut.rotation[0], _ipOut.rotation[1], _ipOut.rotation[2]) * transform;
-    for (std::shared_ptr<Node> node : _loadedScenes[sceneString]->topNodes) {
-        node->refreshTransform(transform);
-    }
+    // _ipOut = _interprocess->_map->at(0);
+    // glm::mat4 transform{1.0};
+    // glm::translate(transform, glm::vec3(_ipOut.position[0], _ipOut.position[1], _ipOut.position[2]));
+    // transform = glm::yawPitchRoll(_ipOut.rotation[0], _ipOut.rotation[1], _ipOut.rotation[2]) * transform;
+    // for (std::shared_ptr<Node> node : _loadedScenes[sceneString]->topNodes) {
+    //     node->refreshTransform(transform);
+    // }
     
     _loadedScenes[sceneString]->Draw(glm::mat4{ 1.0f }, _mainDrawContext);
 
@@ -1601,6 +1635,18 @@ void VulkanEngine::init_post_process_pipelines()
 void VulkanEngine::init_ray_tracing()
 {
     create_bottom_level_as();
+    create_top_level_as();
+    write_rt_descriptor_set();
+}
+
+void VulkanEngine::cleanup_ray_tracing()
+{
+    for (auto& t : _tlas) {
+        destroy_accel_struct(t);
+    }
+    for (auto& b : _blas) {
+        destroy_accel_struct(b);
+    }
 }
 
 BLASInput VulkanEngine::mesh_to_vk_geometry(const MeshAsset &mesh)
@@ -1790,19 +1836,167 @@ void VulkanEngine::create_bottom_level_as()
             indices.clear();
         }
     }
-    for (auto& b : asBuilds) {
-        _blas.emplace_back(b.as);
+    for (uint32_t i = 0; i < asBuilds.size(); i++) {
+        _blas.emplace_back(asBuilds[i].as);
+        MeshInstance instance;
+        instance.meshIndex = i; // just doing one instance of each blas for now (instead of identifying separate meshes as one mesh with multiple instances)
+        instance.transform = glm::mat4{1.0f};
+        _instances.emplace_back(instance);
     }
 
-    _mainDeletionQueue.push_function([&](){
-        for (auto& b : _blas) {
-            destroy_accel_struct(b);
-        }
-    });
     vkDestroyQueryPool(_device, queryPool, nullptr);
     destroy_buffer(scratchBuffer);
 }
 
+void VulkanEngine::create_top_level_as()
+{
+    std::vector<VkAccelerationStructureInstanceKHR> tlas;
+    tlas.reserve(_instances.size()); 
+    for (const auto& inst : _instances) {
+        VkAccelerationStructureInstanceKHR rayInst{};
+        rayInst.transform = vkutil::toTransformMatrixKHR(inst.transform);
+        rayInst.instanceCustomIndex = inst.meshIndex;
+        rayInst.accelerationStructureReference = _blas[inst.meshIndex].address;
+        rayInst.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
+        rayInst.mask = 0xFF;
+        rayInst.instanceShaderBindingTableRecordOffset = 0; // all same hit group for now
+        tlas.emplace_back(rayInst);
+    }
+
+    uint32_t instanceCount = static_cast<uint32_t>(_instances.size());
+    size_t instanceBufferSize = _instances.size()*sizeof(MeshInstance);
+    AllocatedBuffer instancesBuffer = create_buffer(
+        instanceBufferSize,
+        VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT
+        | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR
+        | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
+        | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        VMA_MEMORY_USAGE_GPU_ONLY
+    );
+
+    AllocatedBuffer staging = create_buffer(
+        instanceBufferSize,
+        VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+        VMA_MEMORY_USAGE_CPU_ONLY
+    );
+
+    void* data = staging.allocation->GetMappedData();
+
+    memcpy(data, tlas.data(), instanceBufferSize);
+
+    immediate_submit([&](VkCommandBuffer cmd) { // usually put on a background thread that solely executes uploads, deleting/reusing the stageing buffers
+        VkBufferCopy bufferCopy{ 0 };
+        bufferCopy.dstOffset = 0;
+        bufferCopy.srcOffset = 0;
+        bufferCopy.size = instanceBufferSize;
+
+        vkCmdCopyBuffer(cmd, staging.buffer, instancesBuffer.buffer, 1, &bufferCopy);
+    }); // otherwise the cpu is waiting until the gpu is done 
+
+    destroy_buffer(staging);
+
+    VkBufferDeviceAddressInfo instancesBufferInfo{};
+    instancesBufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
+    instancesBufferInfo.buffer = instancesBuffer.buffer;
+    VkDeviceAddress instancesBufferAddress = vkGetBufferDeviceAddress(_device, &instancesBufferInfo);
+
+    immediate_submit([&](VkCommandBuffer cmd) {
+        VkMemoryBarrier barrier{};
+        barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        barrier.dstAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR;
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 
+            VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 0, 1, &barrier, 0, nullptr, 0, nullptr
+        );
+    });
+
+    VkAccelerationStructureGeometryInstancesDataKHR geomInstances{};
+    geomInstances.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR;
+    geomInstances.data.deviceAddress = instancesBufferAddress;
+
+    VkAccelerationStructureGeometryKHR topASGeom{};
+    topASGeom.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
+    topASGeom.geometryType = VK_GEOMETRY_TYPE_INSTANCES_KHR;
+    topASGeom.geometry.instances = geomInstances;
+
+    VkAccelerationStructureBuildGeometryInfoKHR buildInfo{};
+    buildInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
+    buildInfo.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
+    buildInfo.geometryCount = 1;
+    buildInfo.pGeometries = &topASGeom;
+    buildInfo.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
+    buildInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
+    buildInfo.srcAccelerationStructure = VK_NULL_HANDLE;
+
+    VkAccelerationStructureBuildSizesInfoKHR sizeInfo{};
+    sizeInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
+    vkGetAccelerationStructureBuildSizesKHR(_device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR,
+        &buildInfo, &instanceCount, &sizeInfo
+    );
+
+    VkAccelerationStructureCreateInfoKHR createInfo{};
+    createInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
+    createInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
+    createInfo.size = sizeInfo.accelerationStructureSize;
+    _tlas.emplace_back(create_accel_struct(createInfo)); // only one tlas for now
+
+    AllocatedBuffer scratchBuffer = create_buffer(
+        sizeInfo.buildScratchSize,
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+        VMA_MEMORY_USAGE_GPU_ONLY,
+        VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT
+    );
+    VkBufferDeviceAddressInfo scratchBufferInfo{};
+    scratchBufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
+    scratchBufferInfo.buffer = scratchBuffer.buffer;
+    VkDeviceAddress scratchAddress = vkGetBufferDeviceAddress(_device, &scratchBufferInfo);
+
+    buildInfo.srcAccelerationStructure = VK_NULL_HANDLE;
+    buildInfo.dstAccelerationStructure = _tlas[0].accel; // only one tlas for now
+    buildInfo.scratchData.deviceAddress = scratchAddress;
+
+    VkAccelerationStructureBuildRangeInfoKHR buildOffsetInfo{instanceCount, 0, 0, 0};
+    const VkAccelerationStructureBuildRangeInfoKHR* pBuildOffsetInfo = &buildOffsetInfo;
+
+    immediate_submit([&](VkCommandBuffer cmd) {
+        vkCmdBuildAccelerationStructuresKHR(cmd, 1, &buildInfo, &pBuildOffsetInfo);
+    });
+
+    destroy_buffer(scratchBuffer);
+    destroy_buffer(instancesBuffer);
+}
+
+void VulkanEngine::create_rt_descriptor_set()
+{
+    {
+        DescriptorLayoutBuilder builder;
+        builder.add_binding(0, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR);
+        builder.add_binding(1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
+        // _rtDescriptorSetLayout = builder.build(_device, VK_SHADER_STAGE_RAYGEN_BIT_KHR);
+        _rtDescriptorSetLayout = builder.build(
+            _device,
+            VK_SHADER_STAGE_RAYGEN_BIT_KHR
+            | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR
+            | VK_SHADER_STAGE_VERTEX_BIT
+            | VK_SHADER_STAGE_FRAGMENT_BIT
+        );
+    }
+
+    _rtDescriptorSet =  _globalDescriptorAllocator.allocate(_device, _rtDescriptorSetLayout);
+
+
+    _mainDeletionQueue.push_function([&](){
+        vkDestroyDescriptorSetLayout(_device, _rtDescriptorSetLayout, nullptr);
+    });
+}
+
+void VulkanEngine::write_rt_descriptor_set()
+{
+    DescriptorWriter writer;
+    writer.write_accel_struct(0, _tlas[0].accel);
+    writer.write_image(1, _rtDrawImage.imageView, _defaultSamplerLinear, VK_IMAGE_LAYOUT_GENERAL, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
+    writer.update_set(_device, _rtDescriptorSet);
+}
 void VulkanEngine::init_interprocess()
 {
     _interprocess = std::make_shared<Interprocess>();
@@ -1831,12 +2025,20 @@ void GLTFMetallic_Roughness::build_pipelines(VulkanEngine* engine)
     layoutBuilder.add_binding(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
     layoutBuilder.add_binding(3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
 
-    materialLayout = layoutBuilder.build(engine->_device, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT);
+    materialLayout = layoutBuilder.build(
+        engine->_device, 
+        VK_SHADER_STAGE_VERTEX_BIT
+        | VK_SHADER_STAGE_FRAGMENT_BIT
+        | VK_SHADER_STAGE_RAYGEN_BIT_KHR
+        | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR
+    );
 
-    VkDescriptorSetLayout layouts[] = { engine->_gpuSceneDataDescriptorLayout, materialLayout };
+    // VkDescriptorSetLayout layouts[] = { engine->_gpuSceneDataDescriptorLayout, materialLayout};
+    VkDescriptorSetLayout layouts[] = { engine->_gpuSceneDataDescriptorLayout, materialLayout, engine->_rtDescriptorSetLayout };
 
     VkPipelineLayoutCreateInfo mesh_layout_info = vkinit::pipeline_layout_create_info();
-    mesh_layout_info.setLayoutCount = 2;
+    // mesh_layout_info.setLayoutCount = 2;
+    mesh_layout_info.setLayoutCount = 3;
     mesh_layout_info.pSetLayouts = layouts;
     mesh_layout_info.pPushConstantRanges = &matrixRange;
     mesh_layout_info.pushConstantRangeCount = 1;
@@ -1963,4 +2165,15 @@ bool vkutil::is_visible(const RenderObject& obj, const glm::mat4& viewProj)
     else {
         return true;
     }
+}
+
+VkTransformMatrixKHR vkutil::toTransformMatrixKHR(const glm::mat4& matrix)
+{
+  // VkTransformMatrixKHR uses a row-major memory layout, while glm::mat4
+  // uses a column-major memory layout. We transpose the matrix so we can
+  // memcpy the matrix's data directly.
+  glm::mat4 temp = glm::transpose(matrix);
+  VkTransformMatrixKHR out_matrix;
+  memcpy(&out_matrix, &temp, sizeof(VkTransformMatrixKHR));
+  return out_matrix;
 }

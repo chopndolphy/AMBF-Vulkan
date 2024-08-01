@@ -27,14 +27,14 @@ sudo apt-get install libsdl2-dev
 - download glslc at https://github.com/google/shaderc/blob/main/downloads.md
 - copy to /usr/local/bin
 
-(from ambf_refactor directory)
+(from build directory)
 ```
-glslc shaders/gradient_color.comp -o shaders/gradient_color.comp.spv
-glslc shaders/sky.comp -o shaders/sky.comp.spv
-glslc shaders/pbr.frag -o shaders/pbr.frag.spv
-glslc shaders/pbr.vert -o shaders/pbr.vert.spv
-glslc shaders/post_process.vert -o shaders/post_process.vert.spv
-glslc shaders/post_process.frag -o shaders/post_process.frag.spv
+glslc ../shaders/gradient_color.comp --target-env=vulkan1.3 -O -o ../shaders/gradient_color.comp.spv
+glslc ../shaders/sky.comp --target-env=vulkan1.3 -O -o ../shaders/sky.comp.spv
+glslc ../shaders/pbr.frag --target-env=vulkan1.3 -O -o ../shaders/pbr.frag.spv 
+glslc ../shaders/pbr.vert --target-env=vulkan1.3 -O -o ../shaders/pbr.vert.spv 
+glslc ../shaders/post_process.vert --target-env=vulkan1.3 -O -o ../shaders/post_process.vert.spv
+glslc ../shaders/post_process.frag --target-env=vulkan1.3 -O -o ../shaders/post_process.frag.spv
 ```
 
 ### GET ASSETS FOLDER

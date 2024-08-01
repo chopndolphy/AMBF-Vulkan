@@ -1,9 +1,8 @@
 cmake_minimum_required(VERSION 3.12)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_FLAGS_DEBUG "-O2 -Wall -Wextra -pedantic -g")
-set(CMAKE_CXX_FLAGS_RELEASE "-DNDEBUG -O3")
-set(ENV{CMAKE_BUILD_TYPE} Debug)
+set(CMAKE_CXX_FLAGS "-O2 -Wall -Wextra -pedantic -g")
+# set(CMAKE_CXX_FLAGS "-DNDEBUG -O3")
 
 
 project(ambf_engine VERSION 1.0)

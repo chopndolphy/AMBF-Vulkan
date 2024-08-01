@@ -1,5 +1,4 @@
-#version 450
-#extension GL_KHR_vulkan_glsl : enable
+#version 460
 
 layout(location = 0) out INTERFACE {
 	vec2 uv; ///< UV coordinates.

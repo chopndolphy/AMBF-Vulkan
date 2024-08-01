@@ -1,6 +1,7 @@
-#version 450
+#version 460
 
-#extension GL_KHR_vulkan_glsl : enable
+#extension GL_EXT_ray_query : require
+#extension GL_EXT_ray_tracing : require
 #extension GL_GOOGLE_include_directive : require
 #include "input_structures.glsl"
 
@@ -138,6 +139,23 @@ void main()
     vec3 ambient = vec3(0.06) * albedo * ao;
     
     vec3 color = ambient + Lo;
+
+    // Ray-traced shadows
+    vec3 origin = inWorldPos;
+    vec3 direction = L;
+    float tMin = 0.01;
+    float tMax = distance;
+
+    rayQueryEXT rayQuery;
+    rayQueryInitializeEXT(rayQuery, topLevelAS, gl_RayFlagsTerminateOnFirstHitEXT, 0xFF, origin, tMin, direction, tMax);
+
+    while(rayQueryProceedEXT(rayQuery))
+    {
+    }
+
+    if (rayQueryGetIntersectionTypeEXT(rayQuery, true) != gl_RayQueryCommittedIntersectionNoneEXT) {
+        color *= 0.1;
+    }
 
     // HDR tonemapping
     color = color / (color + vec3(1.0));

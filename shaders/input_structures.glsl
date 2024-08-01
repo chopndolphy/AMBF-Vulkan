@@ -1,3 +1,5 @@
+#extension GL_EXT_ray_tracing : require
+
 layout(set = 0, binding = 0) uniform SceneData{
 
 	mat4 view;
@@ -19,3 +21,7 @@ layout(set = 1, binding = 0) uniform GLTFMaterialData{
 layout(set = 1, binding = 1) uniform sampler2D colorTex;
 layout(set = 1, binding = 2) uniform sampler2D metalRoughTex;
 layout(set = 1, binding = 3) uniform sampler2D normalTex;
+
+// if ray-tracing is enabled
+layout(set = 2, binding = 0) uniform accelerationStructureEXT topLevelAS;
+layout(set = 2, binding = 1, rgba32f) uniform image2D image;
