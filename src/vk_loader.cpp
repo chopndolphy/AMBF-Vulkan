@@ -317,7 +317,6 @@ std::optional<std::shared_ptr<LoadedGLTF>> vkutil::load_gltf(VulkanEngine* engin
 		}
 
 		nodes.push_back(newNode);
-		file.nodes[node.name.c_str()];
 
 		std::visit(
 			fastgltf::visitor{
@@ -351,6 +350,7 @@ std::optional<std::shared_ptr<LoadedGLTF>> vkutil::load_gltf(VulkanEngine* engin
 			},
 			node.transform
 		);
+		file.nodes[node.name.c_str()] = newNode;
 		if (node.meshIndex.has_value()) {
 			static_cast<MeshNode*>(newNode.get())->InitMeshTransform();
 		}

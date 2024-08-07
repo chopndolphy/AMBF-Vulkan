@@ -2,26 +2,34 @@
 
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <boost/interprocess/containers/map.hpp>
+#include <boost/interprocess/containers/string.hpp>
 #include <boost/interprocess/allocators/allocator.hpp>
+#include <boost/unordered_map.hpp>
 #include <memory>
 #include <functional>
 #include <utility>
+#include <glm/glm.hpp>
+#include <glm/gtc/type_ptr.hpp>
+#include <glm/mat4x4.hpp>
+#include <unordered_map>
+#include "vk_types.h"
 
-struct IPCTransform {
-    float position[3] = {0, 0, 0};
-    float rotation[3] = {0, 0, 0};
+namespace bip = boost::interprocess;
+typedef bip::allocator<char, bip::managed_shared_memory::segment_manager> CharAllocator;
+typedef bip::basic_string<char, std::char_traits<char>, CharAllocator> ShmemString;
+typedef ShmemString HashKeyType;
+
+struct Transform {
+    float array[16] = {1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f};
 };
-
-typedef unsigned int KeyType;
-typedef IPCTransform MappedType;
-typedef std::pair<const unsigned int, IPCTransform> ValueType;
-typedef boost::interprocess::allocator<ValueType, boost::interprocess::managed_shared_memory::segment_manager> ShmemAllocator;
-typedef boost::interprocess::map<KeyType, MappedType, std::less<KeyType>, ShmemAllocator> ShmemMap;
+typedef Transform HashMappedType;
+typedef std::pair<const ShmemString, Transform> HashValueType;
+typedef bip::allocator<HashValueType, bip::managed_shared_memory::segment_manager> HashMemAllocator;
+typedef boost::unordered_map<HashKeyType, HashMappedType, boost::hash<HashKeyType>, std::equal_to<HashKeyType>, HashMemAllocator> HashMap;
 class Interprocess {
     public:
-        Interprocess();
+        Interprocess(const std::unordered_map<std::string, std::shared_ptr<Node>> &nodeMap);
         void destroy();
-        boost::interprocess::managed_shared_memory _segment;
-        std::shared_ptr<ShmemAllocator> _alloc;
-        boost::interprocess::offset_ptr<ShmemMap> _map;
+        bip::managed_shared_memory _segment;
+        bip::offset_ptr<HashMap> _map;
 };

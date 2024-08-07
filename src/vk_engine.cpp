@@ -8,6 +8,8 @@
 #include "vk_descriptors.h"
 #include <glm/gtx/transform.hpp>
 #include <glm/gtx/euler_angles.hpp>
+#include <glm/gtc/type_ptr.hpp>
+#include <boost/unordered_map.hpp>
 
 #define VMA_IMPLEMENTATION
 #include <vk_mem_alloc.h>
@@ -95,7 +97,7 @@ void VulkanEngine::init()
 
     init_renderables();
      
-    // init_interprocess();
+    init_interprocess();
 
     init_ray_tracing();
 
@@ -1586,15 +1588,12 @@ void VulkanEngine::update_scene()
     _sceneData.proj = glm::perspective(glm::radians(70.0f), aspectRatio, 10000.0f, 0.001f);
     _sceneData.proj[1][1] *= 1; //might need to change to -1
     _sceneData.viewproj = _sceneData.proj * _sceneData.view;
-
-    // _ipOut = _interprocess->_map->at(0);
-    // glm::mat4 transform{1.0};
-    // glm::translate(transform, glm::vec3(_ipOut.position[0], _ipOut.position[1], _ipOut.position[2]));
-    // transform = glm::yawPitchRoll(_ipOut.rotation[0], _ipOut.rotation[1], _ipOut.rotation[2]) * transform;
-    // for (std::shared_ptr<Node> node : _loadedScenes[sceneString]->topNodes) {
-    //     node->refreshTransform(transform);
-    // }
-    
+    for (auto node : _loadedScenes[sceneString]->nodes) {
+        ShmemString name(node.first.c_str(), _interprocess->_segment.get_allocator<ShmemString>());
+        Transform trans = _interprocess->_map->at(name);
+        glm::mat4 transform = glm::make_mat4(trans.array);
+        node.second->worldTransform = transform;
+    } 
     _loadedScenes[sceneString]->Draw(glm::mat4{ 1.0f }, _mainDrawContext);
 
     auto end = std::chrono::system_clock::now();
@@ -2009,7 +2008,6 @@ void VulkanEngine::create_rt_descriptor_set()
         DescriptorLayoutBuilder builder;
         builder.add_binding(0, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR);
         builder.add_binding(1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
-        // _rtDescriptorSetLayout = builder.build(_device, VK_SHADER_STAGE_RAYGEN_BIT_KHR);
         _rtDescriptorSetLayout = builder.build(
             _device,
             VK_SHADER_STAGE_RAYGEN_BIT_KHR
@@ -2036,7 +2034,7 @@ void VulkanEngine::write_rt_descriptor_set()
 }
 void VulkanEngine::init_interprocess()
 {
-    _interprocess = std::make_shared<Interprocess>();
+    _interprocess = std::make_shared<Interprocess>(_loadedScenes[sceneString]->nodes);
 }
 
 void GLTFMetallic_Roughness::build_pipelines(VulkanEngine* engine)

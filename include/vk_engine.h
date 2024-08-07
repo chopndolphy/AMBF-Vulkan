@@ -282,7 +282,6 @@ public:
 
 	GUITransform _guiTransform{};
 	std::shared_ptr<Interprocess> _interprocess;
-	IPCTransform _ipOut{};
 
 	std::shared_ptr<ImGuiIO> _io;
 
