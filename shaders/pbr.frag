@@ -76,18 +76,23 @@ vec3 fresnelSchlick(float cosTheta, vec3 F0)
 // ----------------------------------------------------------------------------
 void main()
 {	
-    vec3 lightPosition = vec3(0.0, 1000.0, 0.0);
+    // vec3 lightPosition = vec3(0.0, 1000.0, 0.0);
+    // vec3 lightPosition = vec3(sceneData.sunlightDirection.xyz);
+    vec3 lightPosition[2];
+    lightPosition[0] = vec3(sceneData.cameraPos.xyz + sceneData.sunlightDirection.xyz);
+    lightPosition[1] = vec3(sceneData.cameraPos.xyz - sceneData.sunlightDirection.xyz);
+
     // vec3 lightPosition = vec3(0.0, 5.0, 0.0);
 
     vec3 albedo     = pow(texture(colorTex, inUV).rgb * materialData.colorFactors.rgb, vec3(2.2));
-    float metallic  = texture(metalRoughTex, inUV).b;
-    float roughness = texture(metalRoughTex, inUV).g;
-    float ao        = texture(metalRoughTex, inUV).r;
-    // float metallic = materialData.metal_rough_factors.x;
-    // float roughness = materialData.metal_rough_factors.y;
+    // float metallic  = texture(metalRoughTex, inUV).b;
+    // float roughness = texture(metalRoughTex, inUV).g;
+    // float ao        = texture(metalRoughTex, inUV).r;
+    float metallic = materialData.metal_rough_factors.x;
+    float roughness = materialData.metal_rough_factors.y;
 
     // vec3 N = getNormalFromMap();
-    vec3 N = inNormal;
+    vec3 N = normalize(inNormal);
     vec3 V = normalize(sceneData.cameraPos.xyz - inWorldPos);
 
     // calculate reflectance at normal incidence; if dia-electric (like plastic) use F0 
@@ -98,64 +103,77 @@ void main()
     // reflectance equation
     vec3 Lo = vec3(0.0);
         // calculate per-light radiance
-	vec3 L = normalize(lightPosition - inWorldPos);
-	vec3 H = normalize(V + L);
-	float distance = length(lightPosition - inWorldPos);
-	float attenuation = 1.0 / (distance * distance);
-	// vec3 radiance = (sceneData.sunlightColor.xyz + vec3(3.0)) * attenuation;
-	vec3 radiance = (sceneData.sunlightColor.xyz * vec3(20.0));
+    for (int i = 0; i < 2; i++)
+    {
+        vec3 L = normalize(lightPosition[i] - inWorldPos);
+        vec3 H = normalize(V + L);
+        float lightDistance = length(lightPosition[i] - inWorldPos);
+        float attenuation = 1.0 / (lightDistance * lightDistance);
+        vec3 radiance = sceneData.sunlightColor.xyz * sceneData.lightIntensity * attenuation;
+        // vec3 radiance = (sceneData.sunlightColor.xyz * vec3(20.0));
+        // vec3 radiance = sceneData.sunlightColor.xyz ;
 
-	// Cook-Torrance BRDF
-	float NDF = DistributionGGX(N, H, roughness);   
-	float G   = GeometrySmith(N, V, L, roughness);      
-	vec3 F    = fresnelSchlick(max(dot(H, V), 0.0), F0);
-	   
-	vec3 numerator    = NDF * G * F; 
-	float denominator = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + 0.0001; // + 0.0001 to prevent divide by zero
-	vec3 specular = numerator / denominator;
-	
-	// kS is equal to Fresnel
-	vec3 kS = F;
-	// for energy conservation, the diffuse and specular light can't
-	// be above 1.0 (unless the surface emits light); to preserve this
-	// relationship the diffuse component (kD) should equal 1.0 - kS.
-	vec3 kD = vec3(1.0) - kS;
-	// multiply kD by the inverse metalness such that only non-metals 
-	// have diffuse lighting, or a linear blend if partly metal (pure metals
-	// have no diffuse light).
-	kD *= 1.0 - metallic;	  
+        // spot light
+        float theta = dot(L, normalize(sceneData.cameraDir.xyz));
+        float epsilon = (sceneData.lightCutoff - sceneData.lightOuterCutoff);
+        float intensity = clamp((theta - sceneData.lightOuterCutoff) / (epsilon + 0.0001), 0.0, 1.0);
+        radiance *= intensity;
 
-	// scale light by NdotL
-	float NdotL = max(dot(N, L), 0.0);        
+        // Cook-Torrance BRDF
+        float NDF = DistributionGGX(N, H, roughness);   
+        float G   = GeometrySmith(N, V, L, roughness);      
+        vec3 F    = fresnelSchlick(max(dot(H, V), 0.0), F0);
+        
+        vec3 numerator    = NDF * G * F; 
+        float denominator = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + 0.0001; // + 0.0001 to prevent divide by zero
+        vec3 specular = numerator / denominator;
+        
+        // kS is equal to Fresnel
+        vec3 kS = F;
+        // for energy conservation, the diffuse and specular light can't
+        // be above 1.0 (unless the surface emits light); to preserve this
+        // relationship the diffuse component (kD) should equal 1.0 - kS.
+        vec3 kD = vec3(1.0) - kS;
+        // multiply kD by the inverse metalness such that only non-metals 
+        // have diffuse lighting, or a linear blend if partly metal (pure metals
+        // have no diffuse light).
+        kD *= 1.0 - metallic;	  
 
-	// add to outgoing radiance Lo
-	Lo += (kD * albedo / PI + specular) * radiance * NdotL;  // note that we already multiplied the BRDF by the Fresnel (kS) so we won't multiply by kS again
+        // scale light by NdotL
+        float NdotL = max(dot(N, L), 0.0);        
+
+        vec3 origin = inWorldPos;
+        vec3 direction = L;
+        float tMin = 0.01;
+        float tMax = lightDistance;
+
+        vec3 contribution = (kD * albedo / PI + specular) * radiance * NdotL;
+
+        rayQueryEXT rayQuery;
+        rayQueryInitializeEXT(rayQuery, topLevelAS, gl_RayFlagsTerminateOnFirstHitEXT, 0xFF, origin, tMin, direction, tMax);
+
+        while(rayQueryProceedEXT(rayQuery))
+        {
+        }
+
+        if (rayQueryGetIntersectionTypeEXT(rayQuery, true) != gl_RayQueryCommittedIntersectionNoneEXT) {
+            contribution *= 0.1;
+        }
+
+        // add to outgoing radiance Lo
+        Lo += contribution;  // note that we already multiplied the BRDF by the Fresnel (kS) so we won't multiply by kS again
+    }
     
     // ambient lighting (note that the next IBL tutorial will replace 
     // this ambient lighting with environment lighting).
 
     // vec3 ambient = vec3(0.1) * albedo;
-    // vec3 ambient = vec3(0.03) * albedo;
-    vec3 ambient = vec3(0.06) * albedo * ao;
+    vec3 ambient = vec3(0.03) * albedo;
+    // vec3 ambient = vec3(0.06) * albedo * ao;
     
     vec3 color = ambient + Lo;
 
     // Ray-traced shadows
-    vec3 origin = inWorldPos;
-    vec3 direction = L;
-    float tMin = 0.01;
-    float tMax = distance;
-
-    rayQueryEXT rayQuery;
-    rayQueryInitializeEXT(rayQuery, topLevelAS, gl_RayFlagsTerminateOnFirstHitEXT, 0xFF, origin, tMin, direction, tMax);
-
-    while(rayQueryProceedEXT(rayQuery))
-    {
-    }
-
-    if (rayQueryGetIntersectionTypeEXT(rayQuery, true) != gl_RayQueryCommittedIntersectionNoneEXT) {
-        color *= 0.1;
-    }
 
     // HDR tonemapping
     color = color / (color + vec3(1.0));

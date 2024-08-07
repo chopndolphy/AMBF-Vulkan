@@ -75,20 +75,11 @@ target_link_libraries(ambf_engine PRIVATE SDL2::SDL2)
 find_library(VULKAN vulkan)
 target_link_libraries(ambf_engine PUBLIC ${VULKAN})
 
-find_library(XXF86VM Xxf86vm)
-target_link_libraries(ambf_engine PUBLIC ${XXF86VM})
-
-find_library(X11 X11)
-target_link_libraries(ambf_engine PUBLIC ${X11})
-
 find_library(PTHREAD pthread)
 target_link_libraries(ambf_engine PUBLIC ${PTHREAD})
 
 find_library(XRANDR Xrandr)
 target_link_libraries(ambf_engine PUBLIC ${XRANDR})
-
-find_library(XI Xi)
-target_link_libraries(ambf_engine PUBLIC ${XI})
 
 find_library(DL dl)
 target_link_libraries(ambf_engine PUBLIC ${DL})

@@ -39,6 +39,7 @@ struct MeshAsset
 	GPUMeshBuffers meshBuffers;
 	uint32_t vertexCount;
 	uint32_t indexCount;
+	glm::mat4 transform;
 };
 
 struct LoadedGLTF : public IRenderable

@@ -39,7 +39,7 @@ constexpr bool bUseValidationLayers = false;
 constexpr bool bUseValidationLayers = true;
 #endif
 
-const std::string sceneString = "juan.glb";
+const std::string sceneString = "juan2.glb";
 
 VulkanEngine& VulkanEngine::Get() { return *loadedEngine; } 
 
@@ -103,7 +103,7 @@ void VulkanEngine::init()
 
 
     _mainCamera.velocity = glm::vec3(0.0f);
-    _mainCamera.position = glm::vec3(0.0f, 1.0f, 0.0f);
+    _mainCamera.position = glm::vec3(6.0f, -5.0f, 6.0f);
 
     _mainCamera.pitch = 0;
     _mainCamera.yaw = 0;
@@ -111,7 +111,15 @@ void VulkanEngine::init()
     _sceneData.ambientColor = glm::vec4(0.1f, 0.1f, 0.1f, 1.0f);
     // _sceneData.sunlightColor = glm::vec4(0.9647f, 0.8039f, 0.5451f, 1.0f);
     _sceneData.sunlightColor = glm::vec4(1.0f);
-    _sceneData.sunlightDirection = glm::vec4{ 0.0, 1.0f, 0.5f, 1.0f };
+    _sceneData.sunlightDirection = glm::vec4(0.0f, 0.05f, 0.0f, 1.0f);
+    // _sceneData.sunlightColor = glm::vec4(0.8f);
+
+    lightCutoffRad = 40.0f;
+    lightOuterCutoffRad = 50.0f;
+    lightPos[0] = 0.0f;
+    lightPos[1] = 0.05f;
+    lightPos[2] = 0.0f;
+    _sceneData.lightIntensity = 40.0f;
     // everything went fine
     _isInitialized = true;
 }
@@ -378,6 +386,27 @@ void VulkanEngine::run()
             ImGui::End();
         }
 
+        lightColor[0] = _sceneData.sunlightColor.r;
+        lightColor[1] = _sceneData.sunlightColor.g;
+        lightColor[2] = _sceneData.sunlightColor.b;
+
+        if (ImGui::Begin("Scene"))
+        {
+            ImGui::ColorPicker3("Spotlight Color", lightColor);
+            ImGui::InputFloat("Light Cutoff", &lightCutoffRad);
+            ImGui::InputFloat("Light Outer Cutoff", &lightOuterCutoffRad);
+            ImGui::InputFloat("Light Intensity", &_sceneData.lightIntensity);
+            ImGui::InputFloat3("Spotlight Position", lightPos);
+            ImGui::Text("Light Location x: %f", _sceneData.sunlightDirection[0]);
+            ImGui::Text("Light Location y: %f", _sceneData.sunlightDirection[1]);
+            ImGui::Text("Light Location z: %f", _sceneData.sunlightDirection[2]);
+            ImGui::Text("Light Location w: %f", _sceneData.sunlightDirection[3]);
+
+            ImGui::End();
+        }
+        _sceneData.sunlightColor = glm::vec4(lightColor[0], lightColor[1], lightColor[2], 1.0f);
+        _sceneData.sunlightDirection = glm::vec4(glm::normalize(glm::vec3(_mainCamera.getViewMatrix()[1])) * lightPos[1], 1.0f);
+
         ImGui::Render();
         
         update_scene();
@@ -543,19 +572,19 @@ void VulkanEngine::init_vulkan()
         .set_required_features(features10)
         .set_surface(_surface)
         .add_desired_extension("VK_KHR_deferred_host_operations")
-        .add_desired_extension("VK_EXT_pageable_device_local_memory")
-        .add_desired_extension("VK_EXT_memory_priority")
+        // .add_desired_extension("VK_EXT_pageable_device_local_memory")
+        // .add_desired_extension("VK_EXT_memory_priority")
         .add_desired_extension("VK_KHR_acceleration_structure")
         .add_desired_extension("VK_KHR_ray_query")
-        .add_desired_extension("VK_KHR_ray_tracing_maintenance1")
-        .add_desired_extension("VK_KHR_ray_tracing_pipeline")
-        .add_desired_extension("VK_KHR_ray_tracing_position_fetch")
-        .add_required_extension_features(pdlmFeatures)
+        // .add_desired_extension("VK_KHR_ray_tracing_maintenance1")
+        // .add_desired_extension("VK_KHR_ray_tracing_pipeline")
+        // .add_desired_extension("VK_KHR_ray_tracing_position_fetch")
+        // .add_required_extension_features(pdlmFeatures)
         .add_required_extension_features(accelStrucFeatures)
         .add_required_extension_features(rayQuerFeatures)
-        .add_required_extension_features(rtMaintFeatures)
-        .add_required_extension_features(rtPipeFeatures)
-        .add_required_extension_features(rtPosFetchFeatures)
+        // .add_required_extension_features(rtMaintFeatures)
+        // .add_required_extension_features(rtPipeFeatures)
+        // .add_required_extension_features(rtPosFetchFeatures)
         .select()
         .value();
 
@@ -1546,6 +1575,11 @@ void VulkanEngine::update_scene()
     _stats.camera_location = _mainCamera.position;
  
     _sceneData.cameraPos = glm::vec4(_mainCamera.position, 1.0f);
+    glm::mat4 inverse = glm::inverse(_mainCamera.getViewMatrix());
+    glm::vec3 front = glm::normalize(glm::vec3(inverse[2]));
+    _sceneData.lightCutoff = glm::cos(glm::radians(lightCutoffRad)); 
+    _sceneData.lightOuterCutoff = glm::cos(glm::radians(lightOuterCutoffRad)); 
+    _sceneData.cameraDir = glm::vec4(glm::normalize(front), 1.0f);
     _sceneData.view = _mainCamera.getViewMatrix();
     float aspectRatio = (float)_drawExtent.width / (float)_drawExtent.height;
     if (aspectRatio != aspectRatio) return;
@@ -1682,6 +1716,7 @@ BLASInput VulkanEngine::mesh_to_vk_geometry(const MeshAsset &mesh)
     BLASInput input;
     input.geom.emplace_back(geom); //vector size of 1 because of only 1 geometry per blas
     input.buildRangeInfo.emplace_back(offset); // vector size of 1 because of only 1 geometry per blas
+    input.name = mesh.name;
 
     return input;
 }
@@ -1695,7 +1730,7 @@ void VulkanEngine::create_bottom_level_as()
         //only one geometry per blas for now
         inputs.emplace_back(blas);
     }
-    
+    std::cout << "1699" << std::endl;  
     VkDeviceSize allBlasMemSize{0};
     uint32_t compactionRequests{0};
     VkDeviceSize maxScratchSize{0};
@@ -1707,7 +1742,8 @@ void VulkanEngine::create_bottom_level_as()
         asBuilds[i].buildInfo.flags = inputs[i].flags
                                     | VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR
                                     | VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_KHR // should eventually be per model
-                                    | VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR; // should eventually be per model
+                                    // | VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR; // should eventually be per model
+                                    ;
         asBuilds[i].buildInfo.geometryCount = static_cast<uint32_t>(inputs[i].geom.size());
         asBuilds[i].buildInfo.pGeometries = inputs[i].geom.data();
 
@@ -1731,6 +1767,7 @@ void VulkanEngine::create_bottom_level_as()
             compactionRequests++;
         }
     }
+    std::cout << "1735" << std::endl;  
     if (maxScratchSize % _asProperties.minAccelerationStructureScratchOffsetAlignment != 0) {
         maxScratchSize += (maxScratchSize % _asProperties.minAccelerationStructureScratchOffsetAlignment);
     }
@@ -1799,31 +1836,32 @@ void VulkanEngine::create_bottom_level_as()
                 }
             });
             if (queryPool) {
-                // compact blas
-                uint32_t queryCount{0};
-                std::vector<VkDeviceSize> compactSizes(static_cast<uint32_t>(indices.size()));
-                vkGetQueryPoolResults(_device, queryPool, 0, (uint32_t)compactSizes.size(),
-                    compactSizes.size() * sizeof(VkDeviceSize), compactSizes.data(), sizeof(VkDeviceSize),
-                    VK_QUERY_RESULT_WAIT_BIT
-                );
-                for (auto i : indices) {
-                    asBuilds[i].cleanupAS = asBuilds[i].as;
-                    asBuilds[i].sizeInfo.accelerationStructureSize = compactSizes[queryCount++];
-
-                    VkAccelerationStructureCreateInfoKHR createInfo{};
-                    createInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
-                    createInfo.size = asBuilds[i].sizeInfo.accelerationStructureSize;
-                    createInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
-                    asBuilds[i].as = create_accel_struct(createInfo);
-                }
                 immediate_submit([&](VkCommandBuffer cmd) {
+                // compact blas
+                    uint32_t queryCount{0};
+                    std::vector<VkDeviceSize> compactSizes(static_cast<uint32_t>(indices.size()));
+                    vkGetQueryPoolResults(_device, queryPool, 0, (uint32_t)compactSizes.size(),
+                        compactSizes.size() * sizeof(VkDeviceSize), compactSizes.data(), sizeof(VkDeviceSize),
+                        VK_QUERY_RESULT_WAIT_BIT
+                    );
                     for (auto i : indices) {
+                        asBuilds[i].cleanupAS = asBuilds[i].as;
+                        asBuilds[i].sizeInfo.accelerationStructureSize = compactSizes[queryCount++];
+
+                        VkAccelerationStructureCreateInfoKHR createInfo{};
+                        createInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
+                        createInfo.size = asBuilds[i].sizeInfo.accelerationStructureSize;
+                        createInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
+                        asBuilds[i].as = create_accel_struct(createInfo);
+
                         VkCopyAccelerationStructureInfoKHR copyInfo{};
+                        
                         copyInfo.sType = VK_STRUCTURE_TYPE_COPY_ACCELERATION_STRUCTURE_INFO_KHR;
                         copyInfo.src = asBuilds[i].buildInfo.dstAccelerationStructure;
                         copyInfo.dst = asBuilds[i].as.accel;
                         copyInfo.mode = VK_COPY_ACCELERATION_STRUCTURE_MODE_COMPACT_KHR;
                         
+                    
                         vkCmdCopyAccelerationStructureKHR(cmd, &copyInfo);
                    }
                 });
@@ -1840,10 +1878,9 @@ void VulkanEngine::create_bottom_level_as()
         _blas.emplace_back(asBuilds[i].as);
         MeshInstance instance;
         instance.meshIndex = i; // just doing one instance of each blas for now (instead of identifying separate meshes as one mesh with multiple instances)
-        instance.transform = glm::mat4{1.0f};
+        instance.transform = _loadedScenes[sceneString]->meshes[inputs[i].name]->transform;
         _instances.emplace_back(instance);
     }
-
     vkDestroyQueryPool(_device, queryPool, nullptr);
     destroy_buffer(scratchBuffer);
 }
@@ -2128,6 +2165,11 @@ void MeshNode::Draw(const glm::mat4& topMatrix, DrawContext& ctx)
     }
 
     Node::Draw(topMatrix, ctx);
+}
+
+void MeshNode::InitMeshTransform()
+{
+    this->mesh->transform = localTransform;
 }
 
 bool vkutil::is_visible(const RenderObject& obj, const glm::mat4& viewProj)

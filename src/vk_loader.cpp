@@ -302,6 +302,7 @@ std::optional<std::shared_ptr<LoadedGLTF>> vkutil::load_gltf(VulkanEngine* engin
 
 		newMesh->meshBuffers = engine->uploadMesh(indices, vertices);
 		newMesh->vertexCount = vertices.size();
+		newMesh->indexCount = indices.size();
 	}
 
 	for (fastgltf::Node& node : gltf.nodes) {
@@ -350,6 +351,9 @@ std::optional<std::shared_ptr<LoadedGLTF>> vkutil::load_gltf(VulkanEngine* engin
 			},
 			node.transform
 		);
+		if (node.meshIndex.has_value()) {
+			static_cast<MeshNode*>(newNode.get())->InitMeshTransform();
+		}
 	}
 
 	for (int i = 0; i < gltf.nodes.size(); i++) {

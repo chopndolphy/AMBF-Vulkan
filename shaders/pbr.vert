@@ -2,6 +2,8 @@
 
 #extension GL_GOOGLE_include_directive : require
 #extension GL_EXT_buffer_reference : require
+#extension GL_EXT_ray_query : require
+#extension GL_EXT_ray_tracing : require
 
 #include "input_structures.glsl"
 
@@ -36,7 +38,7 @@ void main()
 
 	gl_Position = sceneData.viewproj * PushConstants.render_matrix * position;
 
-	outNormal = (PushConstants.render_matrix * vec4(v.normal, 0.0f)).xyz;
+	outNormal = mat3(transpose(inverse(PushConstants.render_matrix))) * v.normal;
 	outWorldPos = (PushConstants.render_matrix * position).xyz;
 	outUV.x = v.uv_x;
 	outUV.y = v.uv_y;

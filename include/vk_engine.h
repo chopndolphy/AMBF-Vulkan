@@ -92,6 +92,7 @@ struct MeshNode : public Node {
 	std::shared_ptr<MeshAsset> mesh;
 
 	virtual void Draw(const glm::mat4& topMatrix, DrawContext& ctx) override;
+	void InitMeshTransform();
 };
 
 struct RenderObject {
@@ -147,6 +148,7 @@ struct BLASInput {
 	std::vector<VkAccelerationStructureGeometryKHR> geom;
 	std::vector<VkAccelerationStructureBuildRangeInfoKHR> buildRangeInfo;
 	VkBuildAccelerationStructureFlagsKHR flags{0};
+	std::string name;
 };
 struct ASBuildData {
 	VkAccelerationStructureTypeKHR type = VK_ACCELERATION_STRUCTURE_TYPE_MAX_ENUM_KHR;
@@ -273,6 +275,10 @@ public:
 	VkDescriptorSet _rtDescriptorSet;
 	AllocatedImage _rtDrawImage;
 	AllocatedImage _rtDepthImage;
+	float lightColor[3];
+	float lightCutoffRad;
+	float lightOuterCutoffRad;
+	float lightPos[3];
 
 	GUITransform _guiTransform{};
 	std::shared_ptr<Interprocess> _interprocess;
