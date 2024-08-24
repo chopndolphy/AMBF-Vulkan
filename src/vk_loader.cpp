@@ -28,10 +28,12 @@ void LoadedGLTF::clearAll()
 	descriptorPool.destroy_pools(dv);
 	creator->destroy_buffer(materialDataBuffer);
 
-	for (auto& [k, v] : meshes) {
-		creator->destroy_buffer(v->meshBuffers.indexBuffer);
-		creator->destroy_buffer(v->meshBuffers.vertexBuffer);
-	}
+	// for (auto& [k, v] : meshes) {
+	// 	indexBuffersDestroyed++;
+	// 	creator->destroy_buffer(v->meshBuffers.indexBuffer);
+	// 	vertexBuffersDestroyed++;	
+	// 	creator->destroy_buffer(v->meshBuffers.vertexBuffer);
+	// }
 
 	for (auto& image : images) {
 		if (image.image == creator->_errorCheckerboardImage.image) {
@@ -142,6 +144,7 @@ std::optional<std::shared_ptr<LoadedGLTF>> vkutil::load_gltf(VulkanEngine* engin
 		}
 	}
 
+	
 	file.materialDataBuffer = engine->create_buffer(
 		sizeof(GLTFMetallic_Roughness::MaterialConstants) * gltf.materials.size(),
 		VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU
@@ -218,8 +221,6 @@ std::optional<std::shared_ptr<LoadedGLTF>> vkutil::load_gltf(VulkanEngine* engin
 		meshes.push_back(newMesh);
 		file.meshes[mesh.name.c_str()] = newMesh;
 		newMesh->name = mesh.name;
-
-		std::cout << mesh.name << std::endl;
 
 		indices.clear();
 		vertices.clear();
@@ -301,6 +302,7 @@ std::optional<std::shared_ptr<LoadedGLTF>> vkutil::load_gltf(VulkanEngine* engin
 		}
 
 		newMesh->meshBuffers = engine->uploadMesh(indices, vertices);
+		engine->meshesToDelete.emplace_back(newMesh->meshBuffers);
 		newMesh->vertexCount = vertices.size();
 		newMesh->indexCount = indices.size();
 	}
@@ -352,7 +354,7 @@ std::optional<std::shared_ptr<LoadedGLTF>> vkutil::load_gltf(VulkanEngine* engin
 		);
 		file.nodes[node.name.c_str()] = newNode;
 		if (node.meshIndex.has_value()) {
-			static_cast<MeshNode*>(newNode.get())->InitMeshTransform();
+			file.meshNodes[node.name.c_str()] = newNode;
 		}
 	}
 

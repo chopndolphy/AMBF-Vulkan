@@ -48,7 +48,7 @@ int main() {
         auto start = std::chrono::system_clock::now();
         transform = interprocess._map->at(name);
         glm::mat4 trans = glm::make_mat4(transform.array);
-        trans = glm::rotate(trans, glm::radians(0.01f), glm::vec3(0.0, 1.0, 0.0));
+        trans = glm::rotate(trans, glm::radians(0.001f), glm::vec3(0.0, 1.0, 0.0));
         memcpy(transform.array, glm::value_ptr(trans), sizeof(trans));
         interprocess._map->at(name) = transform;
         auto end = std::chrono::system_clock::now();

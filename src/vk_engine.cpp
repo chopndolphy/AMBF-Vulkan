@@ -82,25 +82,17 @@ void VulkanEngine::init()
     SDL_SetRelativeMouseMode(SDL_TRUE);
 
     init_vulkan();
-
     init_swapchain();
-
     init_commands();
-
+    init_async_compute_commands();
     init_sync_structures();
-
+    init_async_compute_sync_structures();
     init_descriptors();
-
     init_pipelines();
- 
     init_default_data();
-
     init_renderables();
-     
     init_interprocess();
-
     init_ray_tracing();
-
     init_imgui();
 
 
@@ -136,6 +128,10 @@ void VulkanEngine::cleanup()
         for (auto& scene : _loadedScenes) {
             scene.second->clearAll();
         }
+        for (auto& meshBuffers : meshesToDelete) {
+            destroy_buffer(meshBuffers.vertexBuffer);
+            destroy_buffer(meshBuffers.indexBuffer);
+        }
         _interprocess->destroy(); 
         _loadedScenes.clear();
         
@@ -149,11 +145,6 @@ void VulkanEngine::cleanup()
 
         vkDestroySurfaceKHR(_instance, _surface, nullptr);
 
-        std::cout << "Images created: " << imagesCreated << std::endl;
-        std::cout << "Images destroyed: " << imagesDestroyed << std::endl;
-        std::cout << "Buffers created: " << buffersCreated << std::endl;
-        std::cout << "Buffers destroyed: " << buffersDestroyed << std::endl;
-        
         vmaDestroyAllocator(_allocator);
  
         vkDestroyDevice(_device, nullptr);
@@ -420,31 +411,39 @@ void VulkanEngine::run()
         _stats.frame_time = elapsed.count() / 1000.0f;
     }
 }
-
-void VulkanEngine::immediate_submit(std::function<void(VkCommandBuffer cmd)>&& function)
-{
+void VulkanEngine::immediate_submit(std::function<void(VkCommandBuffer cmd)>&& function) {
     VK_CHECK(vkResetFences(_device, 1, &_immFence));
     VK_CHECK(vkResetCommandBuffer(_immCommandBuffer, 0));
 
     VkCommandBuffer cmd = _immCommandBuffer;
-
     VkCommandBufferBeginInfo cmdBeginInfo = vkinit::command_buffer_begin_info(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
 
     VK_CHECK(vkBeginCommandBuffer(cmd, &cmdBeginInfo));
-
     function(cmd);
-
     VK_CHECK(vkEndCommandBuffer(cmd));
 
     VkCommandBufferSubmitInfo cmdInfo = vkinit::command_buffer_submit_info(cmd);
     VkSubmitInfo2 submit = vkinit::submit_info(&cmdInfo, nullptr, nullptr);
-
     VK_CHECK(vkQueueSubmit2(_graphicsQueue, 1, &submit, _immFence));
-
     VK_CHECK(vkWaitForFences(_device, 1, &_immFence, true, 9999999999));
 }
-GPUMeshBuffers VulkanEngine::uploadMesh(std::span<uint32_t> indices, std::span<Vertex> vertices)
-{
+void VulkanEngine::async_compute_submit(std::function<void(VkCommandBuffer cmd)> &&function) {
+    VK_CHECK(vkResetFences(_device, 1, &_asyncComputeFence));
+    VK_CHECK(vkResetCommandBuffer(_asyncComputeCommandBuffer, 0));
+
+    VkCommandBuffer cmd = _asyncComputeCommandBuffer;
+    VkCommandBufferBeginInfo cmdBeginInfo = vkinit::command_buffer_begin_info(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
+
+    VK_CHECK(vkBeginCommandBuffer(cmd, &cmdBeginInfo));
+    function(cmd);
+    VK_CHECK(vkEndCommandBuffer(cmd));
+
+    VkCommandBufferSubmitInfo cmdInfo = vkinit::command_buffer_submit_info(cmd);
+    VkSubmitInfo2 submit = vkinit::submit_info(&cmdInfo, nullptr, nullptr);
+    VK_CHECK(vkQueueSubmit2(_asyncComputeQueue, 1, &submit, _asyncComputeFence));
+    VK_CHECK(vkWaitForFences(_device, 1, &_asyncComputeFence, true, 9999999999));
+}
+GPUMeshBuffers VulkanEngine::uploadMesh(std::span<uint32_t> indices, std::span<Vertex> vertices) {
     const size_t vertexBufferSize = vertices.size() * sizeof(Vertex);
     const size_t indexBufferSize = indices.size() * sizeof(uint32_t);
 
@@ -603,6 +602,9 @@ void VulkanEngine::init_vulkan()
 
     _graphicsQueue = vkbDevice.get_queue(vkb::QueueType::graphics).value();
     _graphicsQueueFamily = vkbDevice.get_queue_index(vkb::QueueType::graphics).value();
+
+    _asyncComputeQueue = vkbDevice.get_queue(vkb::QueueType::compute).value();
+    _asyncComputeQueueFamily = vkbDevice.get_queue_index(vkb::QueueType::compute).value();
 
     _rtProperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR;
     _rtProperties.pNext = &_asProperties;
@@ -794,6 +796,20 @@ void VulkanEngine::init_commands()
         vkDestroyCommandPool(_device, _immCommandPool, nullptr);
     });
 }
+void VulkanEngine::init_async_compute_commands()
+{
+    VkCommandPoolCreateInfo commandPoolInfo = vkinit::command_pool_create_info(
+        _asyncComputeQueueFamily,
+        VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT
+    );
+    VK_CHECK(vkCreateCommandPool(_device, &commandPoolInfo, nullptr, &_asyncComputeCommandPool));
+    VkCommandBufferAllocateInfo cmdAllocInfo = vkinit::command_buffer_allocate_info(_asyncComputeCommandPool, 1);
+    VK_CHECK(vkAllocateCommandBuffers(_device, &cmdAllocInfo, &_asyncComputeCommandBuffer));
+
+    _mainDeletionQueue.push_function([=]() {
+        vkDestroyCommandPool(_device, _asyncComputeCommandPool, nullptr);
+    });
+}
 void VulkanEngine::init_sync_structures()
 {
     VkFenceCreateInfo fenceCreateInfo = vkinit::fence_create_info(VK_FENCE_CREATE_SIGNALED_BIT);
@@ -817,7 +833,16 @@ void VulkanEngine::init_sync_structures()
     _mainDeletionQueue.push_function([=]() {
         vkDestroyFence(_device, _immFence, nullptr);
     });
-} 
+}
+void VulkanEngine::init_async_compute_sync_structures()
+{
+    VkFenceCreateInfo fenceCreateInfo = vkinit::fence_create_info(VK_FENCE_CREATE_SIGNALED_BIT);
+    VkSemaphoreCreateInfo semaphoreCreateInfo = vkinit::semaphore_create_info();
+    VK_CHECK(vkCreateFence(_device, &fenceCreateInfo, nullptr, &_asyncComputeFence));
+    _mainDeletionQueue.push_function([=]() {
+        vkDestroyFence(_device, _asyncComputeFence, nullptr);
+    });
+}
 void VulkanEngine::init_descriptors()
 {
     std::vector<DescriptorAllocatorGrowable::PoolSizeRatio> sizes =
@@ -1159,8 +1184,6 @@ void VulkanEngine::resize_swapchain()
 }
 AllocatedBuffer VulkanEngine::create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage)
 {
-    buffersCreated++;
-
     VkBufferCreateInfo bufferInfo = { .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
     bufferInfo.pNext = nullptr;
     bufferInfo.size = allocSize;
@@ -1178,8 +1201,6 @@ AllocatedBuffer VulkanEngine::create_buffer(size_t allocSize, VkBufferUsageFlags
 }
 AllocatedBuffer VulkanEngine::create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage, VmaAllocationCreateFlagBits allocFlags)
 {
-    buffersCreated++;
-
     VkBufferCreateInfo bufferInfo = { .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
     bufferInfo.pNext = nullptr;
     bufferInfo.size = allocSize;
@@ -1197,11 +1218,11 @@ AllocatedBuffer VulkanEngine::create_buffer(size_t allocSize, VkBufferUsageFlags
 }
 void VulkanEngine::destroy_buffer(const AllocatedBuffer &buffer)
 {
-    buffersDestroyed++;
     vmaDestroyBuffer(_allocator, buffer.buffer, buffer.allocation);
 }
 void VulkanEngine::draw_main(VkCommandBuffer cmd)
 { 
+
     ComputeEffect& effect = _backgroundEffects[_currentBackgroundEffect];
 
     //vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, effect.pipeline);
@@ -1354,7 +1375,6 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
     });
 
 
- 
     AllocatedBuffer gpuSceneDataBuffer = create_buffer(sizeof(GPUSceneData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
     
     get_current_frame()._deletionQueue.push_function([=, this]() {
@@ -1374,6 +1394,8 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
     MaterialInstance* lastMaterial = nullptr;
     VkBuffer lastIndexBuffer = VK_NULL_HANDLE; 
 
+    VkDescriptorSet rtDescriptorSet = create_top_level_as();
+
     auto draw = [&](const RenderObject& r) {
         if (r.material != lastMaterial) {
 
@@ -1388,7 +1410,7 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
                     0, 1, &globalDescriptor, 0, nullptr);
                 
                 vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, r.material->pipeline->layout,
-                    2, 1, &_rtDescriptorSet, 0, nullptr);
+                    2, 1, &rtDescriptorSet, 0, nullptr);
 
                 VkViewport viewport = {};
                 viewport.x = 0;
@@ -1446,7 +1468,6 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
 
 AllocatedImage VulkanEngine::create_image(VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped)
 {
-    imagesCreated++;
 
     AllocatedImage newImage;
     newImage.imageFormat = format;
@@ -1556,14 +1577,13 @@ AllocatedAS VulkanEngine::create_accel_struct(const VkAccelerationStructureCreat
     return as;
 }
 
-void VulkanEngine::destroy_accel_struct(AllocatedAS &accel) {
+void VulkanEngine::destroy_accel_struct(const AllocatedAS &accel) {
     vkDestroyAccelerationStructureKHR(_device, accel.accel, nullptr);
     destroy_buffer(accel.buffer);
 }
 
 void VulkanEngine::destroy_image(const AllocatedImage& img)
 {
-    imagesDestroyed++;
     vkDestroyImageView(_device, img.imageView, nullptr);
     vmaDestroyImage(_allocator, img.image, img.allocation);
 }
@@ -1593,6 +1613,7 @@ void VulkanEngine::update_scene()
         Transform trans = _interprocess->_map->at(name);
         glm::mat4 transform = glm::make_mat4(trans.array);
         node.second->worldTransform = transform;
+        _instances[_nodeNameToInstanceIndexMap[node.first]].transform = node.second->worldTransform;
     } 
     _loadedScenes[sceneString]->Draw(glm::mat4{ 1.0f }, _mainDrawContext);
 
@@ -1668,15 +1689,10 @@ void VulkanEngine::init_post_process_pipelines()
 void VulkanEngine::init_ray_tracing()
 {
     create_bottom_level_as();
-    create_top_level_as();
-    write_rt_descriptor_set();
 }
 
 void VulkanEngine::cleanup_ray_tracing()
 {
-    for (auto& t : _tlas) {
-        destroy_accel_struct(t);
-    }
     for (auto& b : _blas) {
         destroy_accel_struct(b);
     }
@@ -1724,12 +1740,13 @@ void VulkanEngine::create_bottom_level_as()
 {
     std::vector<BLASInput> inputs;
     inputs.reserve(_loadedScenes[sceneString]->meshes.size());
+    std::unordered_map<std::string, uint32_t> nameIndexMap;
     for (const auto& mesh : _loadedScenes[sceneString]->meshes) {
         BLASInput blas = mesh_to_vk_geometry(*mesh.second);
         //only one geometry per blas for now
+        nameIndexMap[mesh.first] = inputs.size();
         inputs.emplace_back(blas);
     }
-    std::cout << "1699" << std::endl;  
     VkDeviceSize allBlasMemSize{0};
     uint32_t compactionRequests{0};
     VkDeviceSize maxScratchSize{0};
@@ -1766,7 +1783,6 @@ void VulkanEngine::create_bottom_level_as()
             compactionRequests++;
         }
     }
-    std::cout << "1735" << std::endl;  
     if (maxScratchSize % _asProperties.minAccelerationStructureScratchOffsetAlignment != 0) {
         maxScratchSize += (maxScratchSize % _asProperties.minAccelerationStructureScratchOffsetAlignment);
     }
@@ -1801,7 +1817,7 @@ void VulkanEngine::create_bottom_level_as()
                 vkResetQueryPool(_device, queryPool, 0, static_cast<uint32_t>(indices.size()));
             }
             uint32_t queryCount{0};
-            immediate_submit([&](VkCommandBuffer cmd) {
+            async_compute_submit([&](VkCommandBuffer cmd) {
                 for (const auto& i : indices) {
                     VkAccelerationStructureCreateInfoKHR createInfo{};
                     createInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
@@ -1835,7 +1851,7 @@ void VulkanEngine::create_bottom_level_as()
                 }
             });
             if (queryPool) {
-                immediate_submit([&](VkCommandBuffer cmd) {
+                async_compute_submit([&](VkCommandBuffer cmd) {
                 // compact blas
                     uint32_t queryCount{0};
                     std::vector<VkDeviceSize> compactSizes(static_cast<uint32_t>(indices.size()));
@@ -1875,28 +1891,32 @@ void VulkanEngine::create_bottom_level_as()
     }
     for (uint32_t i = 0; i < asBuilds.size(); i++) {
         _blas.emplace_back(asBuilds[i].as);
+    }
+    for (auto node : _loadedScenes[sceneString]->meshNodes) {
+        MeshNode* meshNode = static_cast<MeshNode*>(node.second.get());
         MeshInstance instance;
-        instance.meshIndex = i; // just doing one instance of each blas for now (instead of identifying separate meshes as one mesh with multiple instances)
-        instance.transform = _loadedScenes[sceneString]->meshes[inputs[i].name]->transform;
+        instance.meshIndex = nameIndexMap[meshNode->mesh->name];
+        instance.transform = meshNode->worldTransform;
+        _nodeNameToInstanceIndexMap[node.first] = _instances.size();
         _instances.emplace_back(instance);
     }
     vkDestroyQueryPool(_device, queryPool, nullptr);
     destroy_buffer(scratchBuffer);
 }
 
-void VulkanEngine::create_top_level_as()
+VkDescriptorSet VulkanEngine::create_top_level_as()
 {
-    std::vector<VkAccelerationStructureInstanceKHR> tlas;
-    tlas.reserve(_instances.size()); 
-    for (const auto& inst : _instances) {
+    std::vector<VkAccelerationStructureInstanceKHR> asInstances;
+    asInstances.reserve(_instances.size()); 
+    for (uint32_t i = 0; i < _instances.size(); i++) {
         VkAccelerationStructureInstanceKHR rayInst{};
-        rayInst.transform = vkutil::toTransformMatrixKHR(inst.transform);
-        rayInst.instanceCustomIndex = inst.meshIndex;
-        rayInst.accelerationStructureReference = _blas[inst.meshIndex].address;
+        rayInst.transform = vkutil::toTransformMatrixKHR(_instances[i].transform);
+        rayInst.instanceCustomIndex = i;
+        rayInst.accelerationStructureReference = _blas[_instances[i].meshIndex].address;
         rayInst.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
         rayInst.mask = 0xFF;
         rayInst.instanceShaderBindingTableRecordOffset = 0; // all same hit group for now
-        tlas.emplace_back(rayInst);
+        asInstances.emplace_back(rayInst);
     }
 
     uint32_t instanceCount = static_cast<uint32_t>(_instances.size());
@@ -1918,9 +1938,9 @@ void VulkanEngine::create_top_level_as()
 
     void* data = staging.allocation->GetMappedData();
 
-    memcpy(data, tlas.data(), instanceBufferSize);
+    memcpy(data, asInstances.data(), instanceBufferSize);
 
-    immediate_submit([&](VkCommandBuffer cmd) { // usually put on a background thread that solely executes uploads, deleting/reusing the stageing buffers
+    async_compute_submit([&](VkCommandBuffer cmd) { // usually put on a background thread that solely executes uploads, deleting/reusing the stageing buffers
         VkBufferCopy bufferCopy{ 0 };
         bufferCopy.dstOffset = 0;
         bufferCopy.srcOffset = 0;
@@ -1936,7 +1956,7 @@ void VulkanEngine::create_top_level_as()
     instancesBufferInfo.buffer = instancesBuffer.buffer;
     VkDeviceAddress instancesBufferAddress = vkGetBufferDeviceAddress(_device, &instancesBufferInfo);
 
-    immediate_submit([&](VkCommandBuffer cmd) {
+    async_compute_submit([&](VkCommandBuffer cmd) {
         VkMemoryBarrier barrier{};
         barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
         barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
@@ -1974,7 +1994,10 @@ void VulkanEngine::create_top_level_as()
     createInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
     createInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
     createInfo.size = sizeInfo.accelerationStructureSize;
-    _tlas.emplace_back(create_accel_struct(createInfo)); // only one tlas for now
+    AllocatedAS tlas = create_accel_struct(createInfo); // only one tlas for now
+    get_current_frame()._deletionQueue.push_function([=, this]() {
+        destroy_accel_struct(tlas);
+    });
 
     AllocatedBuffer scratchBuffer = create_buffer(
         sizeInfo.buildScratchSize,
@@ -1988,49 +2011,43 @@ void VulkanEngine::create_top_level_as()
     VkDeviceAddress scratchAddress = vkGetBufferDeviceAddress(_device, &scratchBufferInfo);
 
     buildInfo.srcAccelerationStructure = VK_NULL_HANDLE;
-    buildInfo.dstAccelerationStructure = _tlas[0].accel; // only one tlas for now
+    buildInfo.dstAccelerationStructure = tlas.accel; // only one tlas for now
     buildInfo.scratchData.deviceAddress = scratchAddress;
 
     VkAccelerationStructureBuildRangeInfoKHR buildOffsetInfo{instanceCount, 0, 0, 0};
     const VkAccelerationStructureBuildRangeInfoKHR* pBuildOffsetInfo = &buildOffsetInfo;
 
-    immediate_submit([&](VkCommandBuffer cmd) {
+    async_compute_submit([&](VkCommandBuffer cmd) {
         vkCmdBuildAccelerationStructuresKHR(cmd, 1, &buildInfo, &pBuildOffsetInfo);
     });
 
     destroy_buffer(scratchBuffer);
     destroy_buffer(instancesBuffer);
+
+    VkDescriptorSet rtDescriptorSet =  get_current_frame()._frameDescriptors.allocate(_device, _rtDescriptorSetLayout);
+
+    DescriptorWriter writer;
+    writer.write_accel_struct(0, tlas.accel);
+    writer.write_image(1, _rtDrawImage.imageView, _defaultSamplerLinear, VK_IMAGE_LAYOUT_GENERAL, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
+    writer.update_set(_device, rtDescriptorSet);
+    return rtDescriptorSet;
 }
 
 void VulkanEngine::create_rt_descriptor_set()
 {
-    {
-        DescriptorLayoutBuilder builder;
-        builder.add_binding(0, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR);
-        builder.add_binding(1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
-        _rtDescriptorSetLayout = builder.build(
-            _device,
-            VK_SHADER_STAGE_RAYGEN_BIT_KHR
-            | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR
-            | VK_SHADER_STAGE_VERTEX_BIT
-            | VK_SHADER_STAGE_FRAGMENT_BIT
-        );
-    }
-
-    _rtDescriptorSet =  _globalDescriptorAllocator.allocate(_device, _rtDescriptorSetLayout);
-
-
-    _mainDeletionQueue.push_function([&](){
+    DescriptorLayoutBuilder builder;
+    builder.add_binding(0, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR);
+    builder.add_binding(1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
+    _rtDescriptorSetLayout = builder.build(
+        _device,
+        VK_SHADER_STAGE_RAYGEN_BIT_KHR
+        | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR
+        | VK_SHADER_STAGE_VERTEX_BIT
+        | VK_SHADER_STAGE_FRAGMENT_BIT
+    );
+    _mainDeletionQueue.push_function([&]() {
         vkDestroyDescriptorSetLayout(_device, _rtDescriptorSetLayout, nullptr);
     });
-}
-
-void VulkanEngine::write_rt_descriptor_set()
-{
-    DescriptorWriter writer;
-    writer.write_accel_struct(0, _tlas[0].accel);
-    writer.write_image(1, _rtDrawImage.imageView, _defaultSamplerLinear, VK_IMAGE_LAYOUT_GENERAL, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
-    writer.update_set(_device, _rtDescriptorSet);
 }
 void VulkanEngine::init_interprocess()
 {
@@ -2163,11 +2180,6 @@ void MeshNode::Draw(const glm::mat4& topMatrix, DrawContext& ctx)
     }
 
     Node::Draw(topMatrix, ctx);
-}
-
-void MeshNode::InitMeshTransform()
-{
-    this->mesh->transform = localTransform;
 }
 
 bool vkutil::is_visible(const RenderObject& obj, const glm::mat4& viewProj)

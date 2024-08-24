@@ -16,8 +16,8 @@ Interprocess::Interprocess(const std::unordered_map<std::string, std::shared_ptr
     for (auto node : nodeMap) {
         ShmemString name(node.first.c_str(), _segment.get_allocator<ShmemString>());
         Transform trans{};
-        assert(sizeof(trans.array) == sizeof(node.second->localTransform));
-        memcpy(trans.array, glm::value_ptr(node.second->worldTransform), sizeof(node.second->localTransform));
+        assert(sizeof(trans.array) == sizeof(node.second->worldTransform));
+        memcpy(trans.array, glm::value_ptr(node.second->worldTransform), sizeof(node.second->worldTransform));
         HashValueType value(name, trans);
         _map->insert(value);
     }

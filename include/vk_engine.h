@@ -92,7 +92,6 @@ struct MeshNode : public Node {
 	std::shared_ptr<MeshAsset> mesh;
 
 	virtual void Draw(const glm::mat4& topMatrix, DrawContext& ctx) override;
-	void InitMeshTransform();
 };
 
 struct RenderObject {
@@ -192,6 +191,7 @@ public:
 	void run();
 
 	void immediate_submit(std::function<void(VkCommandBuffer cmd)>&& function);
+	void async_compute_submit(std::function<void(VkCommandBuffer cmd)>&& function);
 	GPUMeshBuffers uploadMesh(std::span<uint32_t> indices, std::span<Vertex> vertices);
 
 	VkInstance _instance;
@@ -212,6 +212,8 @@ public:
 	FrameData _frames[FRAME_OVERLAP];
 	VkQueue _graphicsQueue;
 	uint32_t _graphicsQueueFamily;
+	VkQueue _asyncComputeQueue;
+	uint32_t _asyncComputeQueueFamily;
 	DeletionQueue _mainDeletionQueue;
 	VmaAllocator _allocator;
 
@@ -231,6 +233,10 @@ public:
 	VkFence _immFence;
 	VkCommandBuffer _immCommandBuffer;
 	VkCommandPool _immCommandPool;
+
+	VkFence _asyncComputeFence;
+	VkCommandBuffer _asyncComputeCommandBuffer;
+	VkCommandPool _asyncComputeCommandPool;
 
 	std::vector<ComputeEffect> _backgroundEffects;
 	int _currentBackgroundEffect{ 1 };
@@ -268,11 +274,10 @@ public:
 
 	VkPhysicalDeviceRayTracingPipelinePropertiesKHR _rtProperties{};
 	VkPhysicalDeviceAccelerationStructurePropertiesKHR _asProperties{};
-	std::vector<AllocatedAS> _tlas;
 	std::vector<AllocatedAS> _blas;
 	std::vector<MeshInstance> _instances;
+	std::unordered_map<std::string, uint32_t> _nodeNameToInstanceIndexMap;
 	VkDescriptorSetLayout _rtDescriptorSetLayout;
-	VkDescriptorSet _rtDescriptorSet;
 	AllocatedImage _rtDrawImage;
 	AllocatedImage _rtDepthImage;
 	float lightColor[3];
@@ -285,10 +290,7 @@ public:
 
 	std::shared_ptr<ImGuiIO> _io;
 
-	uint32_t buffersCreated{};
-	uint32_t buffersDestroyed{};
-	uint32_t imagesCreated{};
-	uint32_t imagesDestroyed{};
+	std::vector<GPUMeshBuffers> meshesToDelete;
 
 	VkPushConstantRange _computePushConstantRange{};
 
@@ -299,7 +301,7 @@ public:
 	AllocatedImage create_image(void* data, VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped = false);
 	void destroy_image(const AllocatedImage& img);
 	AllocatedAS create_accel_struct(const VkAccelerationStructureCreateInfoKHR& accel);
-	void destroy_accel_struct(AllocatedAS& accel);
+	void destroy_accel_struct(const AllocatedAS& accel);
 	
 
 private:
@@ -307,7 +309,9 @@ private:
 	void init_vulkan();
 	void init_swapchain();
 	void init_commands();
+	void init_async_compute_commands();
 	void init_sync_structures();
+	void init_async_compute_sync_structures();
 	void init_descriptors();
 	void init_pipelines();
 	void init_background_pipelines();
@@ -320,9 +324,8 @@ private:
 	void cleanup_ray_tracing();
 	BLASInput mesh_to_vk_geometry(const MeshAsset &obj);
 	void create_bottom_level_as();
-	void create_top_level_as();
+	VkDescriptorSet create_top_level_as();
 	void create_rt_descriptor_set();
-	void write_rt_descriptor_set();
 
 	void init_interprocess();
 

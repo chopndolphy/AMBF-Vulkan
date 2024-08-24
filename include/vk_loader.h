@@ -32,6 +32,7 @@ struct GeoSurface
 	std::shared_ptr<GLTFMaterial> material;
 };
 
+struct MeshNode;
 struct MeshAsset
 {
 	std::string name;
@@ -39,7 +40,6 @@ struct MeshAsset
 	GPUMeshBuffers meshBuffers;
 	uint32_t vertexCount;
 	uint32_t indexCount;
-	glm::mat4 transform;
 };
 
 struct LoadedGLTF : public IRenderable
@@ -47,6 +47,7 @@ struct LoadedGLTF : public IRenderable
 public:
 	std::unordered_map<std::string, std::shared_ptr<MeshAsset>> meshes;
 	std::unordered_map<std::string, std::shared_ptr<Node>> nodes;
+	std::unordered_map<std::string, std::shared_ptr<Node>> meshNodes;
 	std::vector<AllocatedImage> images;
 	std::unordered_map<std::string, std::shared_ptr<GLTFMaterial>> materials;
 
