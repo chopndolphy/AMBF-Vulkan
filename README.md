@@ -1,8 +1,8 @@
 # AMBF-Vulkan
 ## Setup
 ### Assets
-[Assets Google Drive](https://drive.google.com/drive/folders/1E6EIFbBrb6o7wJoxWUANeckHJCKVS_An?usp=sharing)
-- unzip and move assets folder into AMBF-Vulkan directory
+[Assets Repo](https://github.com/AMBF-Vulkan-repositories/src_sample_assets/tree/main/glTF)
+- move assets into a new "assets" folder in the AMBF-Vulkan directory
 
 ### Vulkan setup
 ```
