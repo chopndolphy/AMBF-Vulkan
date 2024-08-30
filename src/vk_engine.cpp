@@ -41,7 +41,7 @@ constexpr bool bUseValidationLayers = false;
 constexpr bool bUseValidationLayers = true;
 #endif
 
-const std::string sceneString = "juan2.glb";
+const std::string sceneString = "src_sample_assets_01.glb";
 
 VulkanEngine& VulkanEngine::Get() { return *loadedEngine; } 
 
@@ -97,7 +97,7 @@ void VulkanEngine::init()
 
 
     _mainCamera.velocity = glm::vec3(0.0f);
-    _mainCamera.position = glm::vec3(6.0f, -5.0f, 6.0f);
+    _mainCamera.position = glm::vec3(0.03f, 1.0f, -0.5f);
 
     _mainCamera.pitch = 0;
     _mainCamera.yaw = 0;
@@ -105,15 +105,15 @@ void VulkanEngine::init()
     _sceneData.ambientColor = glm::vec4(0.1f, 0.1f, 0.1f, 1.0f);
     // _sceneData.sunlightColor = glm::vec4(0.9647f, 0.8039f, 0.5451f, 1.0f);
     _sceneData.sunlightColor = glm::vec4(1.0f);
-    _sceneData.sunlightDirection = glm::vec4(0.0f, 0.05f, 0.0f, 1.0f);
+    _sceneData.sunlightDirection = glm::vec4(0.0f, 0.002f, 0.0f, 1.0f);
     // _sceneData.sunlightColor = glm::vec4(0.8f);
 
     lightCutoffRad = 40.0f;
     lightOuterCutoffRad = 50.0f;
     lightPos[0] = 0.0f;
-    lightPos[1] = 0.05f;
+    lightPos[1] = 0.002f;
     lightPos[2] = 0.0f;
-    _sceneData.lightIntensity = 40.0f;
+    _sceneData.lightIntensity = 0.4f;
     // everything went fine
     _isInitialized = true;
 }
@@ -1612,8 +1612,14 @@ void VulkanEngine::update_scene()
         ShmemString name(node.first.c_str(), _interprocess->_segment.get_allocator<ShmemString>());
         Transform trans = _interprocess->_map->at(name);
         glm::mat4 transform = glm::make_mat4(trans.array);
-        node.second->worldTransform = transform;
-        _instances[_nodeNameToInstanceIndexMap[node.first]].transform = node.second->worldTransform;
+        node.second->localTransform = transform; // change to worldTransform when proper change of basis matrix
+    } 
+    glm::mat4 rotate90 = glm::rotate(glm::radians(90.0f), glm::vec3{-1.0f, 0.0f, 0.0f});
+    for (auto topNode : _loadedScenes[sceneString]->topNodes) {
+        topNode->refreshTransform(rotate90);
+    }
+    for (auto node : _loadedScenes[sceneString]->nodes) {
+        _instances[_nodeNameToInstanceIndexMap[node.first]].transform = node.second->worldTransform; // move back into first loop when proper change of basis matrix
     } 
     _loadedScenes[sceneString]->Draw(glm::mat4{ 1.0f }, _mainDrawContext);
 
