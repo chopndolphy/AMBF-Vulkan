@@ -21,6 +21,16 @@ Interprocess::Interprocess(const std::unordered_map<std::string, std::shared_ptr
         HashValueType value(name, trans);
         _map->insert(value);
     }
+    ShmemString cameraBasis("CameraBasis", _segment.get_allocator<ShmemString>());
+    Transform cameraTransform{};
+    glm::mat4 cameraMat{0.0f};
+    cameraMat[0][0] = 1.0f;
+    cameraMat[1][1] = 1.0f;
+    cameraMat[2][2] = 1.0f;
+    cameraMat[3][3] = 1.0f;
+    memcpy(cameraTransform.array, glm::value_ptr(cameraMat), sizeof(cameraMat));
+    HashValueType value(cameraBasis, cameraTransform);
+    _map->insert(value);
 }
 
 void Interprocess::destroy()

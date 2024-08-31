@@ -14,7 +14,7 @@ file(GLOB_RECURSE IMGUI_SRC_FILES ${LIB}/imgui/*.cpp)
 
 ## MY FILES
 file(GLOB_RECURSE SRC_FILES ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp)
-add_executable(ambf-vulkan ${CMAKE_CURRENT_SOURCE_DIR}/src/ambf_engine.cpp ${SRC_FILES} ${IMGUI_SRC_FILES})
+add_executable(ambf-vulkan ${CMAKE_CURRENT_SOURCE_DIR}/src/ambf-vulkan.cpp ${SRC_FILES} ${IMGUI_SRC_FILES})
 target_include_directories(ambf-vulkan PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include ${LIB}/imgui)
 target_compile_definitions(ambf-vulkan PUBLIC IMGUI_IMPL_VULKAN_USE_VOLK)
 

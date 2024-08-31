@@ -1596,29 +1596,31 @@ void VulkanEngine::update_scene()
 
     _stats.camera_location = _mainCamera.position;
  
-    _sceneData.cameraPos = glm::vec4(_mainCamera.position, 1.0f);
-    glm::mat4 inverse = glm::inverse(_mainCamera.getViewMatrix());
+    ShmemString cameraName("CameraBasis", _interprocess->_segment.get_allocator<ShmemString>());
+    Transform cameraBasisTrans = _interprocess->_map->at(cameraName);
+    glm::mat4 cameraBasis = glm::make_mat4(cameraBasisTrans.array);
+
+    _sceneData.view = _mainCamera.getViewMatrix();
+    _sceneData.view *= cameraBasis;
+
+    glm::mat4 inverse = glm::inverse(_sceneData.view);
     glm::vec3 front = glm::normalize(glm::vec3(inverse[2]));
+    _sceneData.cameraPos = inverse[3];
     _sceneData.lightCutoff = glm::cos(glm::radians(lightCutoffRad)); 
     _sceneData.lightOuterCutoff = glm::cos(glm::radians(lightOuterCutoffRad)); 
     _sceneData.cameraDir = glm::vec4(glm::normalize(front), 1.0f);
-    _sceneData.view = _mainCamera.getViewMatrix();
+
     float aspectRatio = (float)_drawExtent.width / (float)_drawExtent.height;
     if (aspectRatio != aspectRatio) return;
     _sceneData.proj = glm::perspective(glm::radians(70.0f), aspectRatio, 10000.0f, 0.001f);
     _sceneData.proj[1][1] *= 1; //might need to change to -1
     _sceneData.viewproj = _sceneData.proj * _sceneData.view;
+
     for (auto node : _loadedScenes[sceneString]->nodes) {
         ShmemString name(node.first.c_str(), _interprocess->_segment.get_allocator<ShmemString>());
         Transform trans = _interprocess->_map->at(name);
         glm::mat4 transform = glm::make_mat4(trans.array);
-        node.second->localTransform = transform; // change to worldTransform when proper change of basis matrix
-    } 
-    glm::mat4 rotate90 = glm::rotate(glm::radians(90.0f), glm::vec3{-1.0f, 0.0f, 0.0f});
-    for (auto topNode : _loadedScenes[sceneString]->topNodes) {
-        topNode->refreshTransform(rotate90);
-    }
-    for (auto node : _loadedScenes[sceneString]->nodes) {
+        node.second->worldTransform = transform;
         _instances[_nodeNameToInstanceIndexMap[node.first]].transform = node.second->worldTransform; // move back into first loop when proper change of basis matrix
     } 
     _loadedScenes[sceneString]->Draw(glm::mat4{ 1.0f }, _mainDrawContext);
