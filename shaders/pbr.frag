@@ -76,11 +76,20 @@ vec3 fresnelSchlick(float cosTheta, vec3 F0)
 // ----------------------------------------------------------------------------
 void main()
 {	
+    vec4 cameraPos = sceneData.inverseView * vec4(0, 0, 0, 1);
+	vec4 cameraDir = sceneData.inverseView * vec4(normalize(vec4(0, 0, 1, 0)));
+
     // vec3 lightPosition = vec3(0.0, 1000.0, 0.0);
     // vec3 lightPosition = vec3(sceneData.sunlightDirection.xyz);
+    
     vec3 lightPosition[2];
-    lightPosition[0] = vec3(sceneData.cameraPos.xyz + sceneData.sunlightDirection.xyz);
-    lightPosition[1] = vec3(sceneData.cameraPos.xyz - sceneData.sunlightDirection.xyz);
+    lightPosition[0] = vec3(cameraPos.xyz + sceneData.sunlightDirection.xyz);
+    lightPosition[1] = vec3(cameraPos.xyz - sceneData.sunlightDirection.xyz);
+
+    //vec3 lightPosition[3];
+    //lightPosition[0] = vec3(1.0, 1.0, sceneData.sunlightDirection.x);
+    //lightPosition[1] = vec3(0.5, 1.0, sceneData.sunlightDirection.y);
+    //lightPosition[2] = vec3(0.0, 1.0, sceneData.sunlightDirection.z);
 
     // vec3 lightPosition = vec3(0.0, 5.0, 0.0);
 
@@ -93,7 +102,7 @@ void main()
 
     // vec3 N = getNormalFromMap();
     vec3 N = normalize(inNormal);
-    vec3 V = normalize(sceneData.cameraPos.xyz - inWorldPos);
+    vec3 V = normalize(cameraPos.xyz - inWorldPos);
 
     // calculate reflectance at normal incidence; if dia-electric (like plastic) use F0 
     // of 0.04 and if it's a metal, use the albedo color as F0 (metallic workflow)    
@@ -114,7 +123,7 @@ void main()
         // vec3 radiance = sceneData.sunlightColor.xyz ;
 
         // spot light
-        float theta = dot(L, normalize(sceneData.cameraDir.xyz));
+        float theta = dot(L, normalize(cameraDir.xyz));
         float epsilon = (sceneData.lightCutoff - sceneData.lightOuterCutoff);
         float intensity = clamp((theta - sceneData.lightOuterCutoff) / (epsilon + 0.0001), 0.0, 1.0);
         radiance *= intensity;
@@ -158,6 +167,7 @@ void main()
 
         if (rayQueryGetIntersectionTypeEXT(rayQuery, true) != gl_RayQueryCommittedIntersectionNoneEXT) {
             contribution *= 0.1;
+            // contribution *= 0.0;
         }
 
         // add to outgoing radiance Lo
@@ -182,3 +192,4 @@ void main()
 
     outFragColor = vec4(color, 1.0);
 }
+/* vim: set filetype=glsl : */

@@ -5,11 +5,10 @@ layout(set = 0, binding = 0) uniform SceneData{
 	mat4 view;
 	mat4 proj;
 	mat4 viewproj;
-	vec4 ambientColor;
+    mat4 inverseView;
+    mat4 inverseProj;
 	vec4 sunlightDirection; //w for sun power
 	vec4 sunlightColor;
-	vec4 cameraPos;
-	vec4 cameraDir;
 	float lightCutoff;
 	float lightOuterCutoff;
 	float lightIntensity;

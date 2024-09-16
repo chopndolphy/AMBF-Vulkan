@@ -97,11 +97,10 @@ struct GPUSceneData {
 	glm::mat4 view;
 	glm::mat4 proj;
 	glm::mat4 viewproj;
-	glm::vec4 ambientColor;
+    glm::mat4 inverseView;
+    glm::mat4 inverseProj;
 	glm::vec4 sunlightDirection; // w for sun power
 	glm::vec4 sunlightColor;
-	glm::vec4 cameraPos;
-    glm::vec4 cameraDir;
     float lightCutoff;
     float lightOuterCutoff;
     float lightIntensity;

@@ -6,6 +6,8 @@
 #include "vk_pipelines.h"
 #include "vk_loader.h"
 #include "vk_descriptors.h"
+#include <cmath>
+#include <glm/ext/vector_float3.hpp>
 #include <glm/gtx/transform.hpp>
 #include <glm/gtx/euler_angles.hpp>
 #include <glm/gtc/type_ptr.hpp>
@@ -102,7 +104,6 @@ void VulkanEngine::init()
     _mainCamera.pitch = 0;
     _mainCamera.yaw = 0;
 
-    _sceneData.ambientColor = glm::vec4(0.1f, 0.1f, 0.1f, 1.0f);
     // _sceneData.sunlightColor = glm::vec4(0.9647f, 0.8039f, 0.5451f, 1.0f);
     _sceneData.sunlightColor = glm::vec4(1.0f);
     _sceneData.sunlightDirection = glm::vec4(0.0f, 0.002f, 0.0f, 1.0f);
@@ -578,13 +579,13 @@ void VulkanEngine::init_vulkan()
         .add_desired_extension("VK_KHR_acceleration_structure")
         .add_desired_extension("VK_KHR_ray_query")
         // .add_desired_extension("VK_KHR_ray_tracing_maintenance1")
-        // .add_desired_extension("VK_KHR_ray_tracing_pipeline")
+        .add_desired_extension("VK_KHR_ray_tracing_pipeline")
         // .add_desired_extension("VK_KHR_ray_tracing_position_fetch")
         // .add_required_extension_features(pdlmFeatures)
         .add_required_extension_features(accelStrucFeatures)
         .add_required_extension_features(rayQuerFeatures)
         // .add_required_extension_features(rtMaintFeatures)
-        // .add_required_extension_features(rtPipeFeatures)
+        .add_required_extension_features(rtPipeFeatures)
         // .add_required_extension_features(rtPosFetchFeatures)
         .select()
         .value();
@@ -1262,6 +1263,20 @@ void VulkanEngine::draw_main(VkCommandBuffer cmd)
     _stats.mesh_draw_time = elapsed.count() / 1000.0f;
 
     vkCmdEndRendering(cmd);
+
+    {
+        VkImageMemoryBarrier2 imageBarrier{ .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2 };
+        imageBarrier.pNext = nullptr;
+        imageBarrier.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+        imageBarrier.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT;
+        imageBarrier.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT; 
+        imageBarrier.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT;
+        imageBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        imageBarrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+        vkutil::transition_image(cmd, _rtDrawImage.image, imageBarrier);
+    }
+
+    draw_raytrace(cmd);
  
     VkRenderingAttachmentInfo postAttachment = vkinit::attachment_info(_postProcessingImage.imageView, nullptr, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
     VkRenderingInfo postInfo = vkinit::rendering_info(_drawExtent, &postAttachment, nullptr);
@@ -1287,6 +1302,7 @@ void VulkanEngine::draw_main(VkCommandBuffer cmd)
         imageBarrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         vkutil::transition_image(cmd, _drawImage.image, imageBarrier);
     }
+
     vkCmdBeginRendering(cmd, &postInfo);
 
     struct UniformBlock {
@@ -1310,9 +1326,9 @@ void VulkanEngine::draw_main(VkCommandBuffer cmd)
     writer.write_image(0, _drawImage.imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
     writer.write_sampler(1, _defaultSamplerLinear, VK_DESCRIPTOR_TYPE_SAMPLER);
     writer.write_buffer(2, postProcessingBuffer.buffer, sizeof(UniformBlock), 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+    writer.write_image(3, _rtDrawImage.imageView, _defaultSamplerLinear, VK_IMAGE_LAYOUT_GENERAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
     writer.update_set(_device, postProcessingDescriptor);
-
-
+    
 	vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _postProcessingPipeline);
 	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _postProcessingPipelineLayout,
 		0, 1, &postProcessingDescriptor, 0, nullptr);
@@ -1384,17 +1400,17 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
     GPUSceneData* sceneUniformData = (GPUSceneData*)gpuSceneDataBuffer.allocation->GetMappedData();
     *sceneUniformData = _sceneData;
  
-    VkDescriptorSet globalDescriptor = get_current_frame()._frameDescriptors.allocate(_device, _gpuSceneDataDescriptorLayout);
+    get_current_frame()._globalDescriptor = get_current_frame()._frameDescriptors.allocate(_device, _gpuSceneDataDescriptorLayout);
 
 	DescriptorWriter writer;
 	writer.write_buffer(0, gpuSceneDataBuffer.buffer, sizeof(GPUSceneData), 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
-	writer.update_set(_device, globalDescriptor);
+	writer.update_set(_device, get_current_frame()._globalDescriptor);
 
     MaterialPipeline* lastPipeline = nullptr;
     MaterialInstance* lastMaterial = nullptr;
     VkBuffer lastIndexBuffer = VK_NULL_HANDLE; 
 
-    VkDescriptorSet rtDescriptorSet = create_top_level_as();
+    get_current_frame()._rtDescriptorSet = create_top_level_as();
 
     auto draw = [&](const RenderObject& r) {
         if (r.material != lastMaterial) {
@@ -1407,10 +1423,10 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
 
                 vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, r.material->pipeline->pipeline);
                 vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, r.material->pipeline->layout,
-                    0, 1, &globalDescriptor, 0, nullptr);
+                    0, 1, &get_current_frame()._globalDescriptor, 0, nullptr);
                 
                 vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, r.material->pipeline->layout,
-                    2, 1, &rtDescriptorSet, 0, nullptr);
+                    2, 1, &get_current_frame()._rtDescriptorSet, 0, nullptr);
 
                 VkViewport viewport = {};
                 viewport.x = 0;
@@ -1464,6 +1480,36 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
  
     _mainDrawContext.OpaqueSurfaces.clear();
     _mainDrawContext.TransparentSurfaces.clear(); 
+}
+
+void VulkanEngine::draw_raytrace(VkCommandBuffer cmd)
+{
+    std::vector<VkDescriptorSet> descSets{get_current_frame()._globalDescriptor, get_current_frame()._rtDescriptorSet};
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, _rtPipeline);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, _rtPipelineLayout, 0,
+            (uint32_t)descSets.size(), descSets.data(), 0, nullptr);
+    vkCmdPushConstants(cmd, _rtPipelineLayout, 
+            VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_MISS_BIT_KHR,
+            0, sizeof(PushConstantRay), &_pcRay);
+    VkViewport viewport = {};
+    viewport.x = 0;
+    viewport.y = 0;
+    viewport.width = (float)_drawExtent.width;
+    viewport.height = (float)_drawExtent.height;
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+
+    vkCmdSetViewport(cmd, 0, 1, &viewport);
+
+    VkRect2D scissor = {};
+    scissor.offset.x = 0;
+    scissor.offset.y = 0;
+    scissor.extent.width = _drawExtent.width;
+    scissor.extent.height = _drawExtent.height;
+
+    vkCmdSetScissor(cmd, 0, 1, &scissor);
+    vkCmdTraceRaysKHR(cmd, &_rayGenRegion, &_missRegion, &_hitRegion, &_callRegion,
+            _drawExtent.width, _drawExtent.height, 1);
 }
 
 AllocatedImage VulkanEngine::create_image(VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped)
@@ -1589,7 +1635,7 @@ void VulkanEngine::destroy_image(const AllocatedImage& img)
 }
 
 void VulkanEngine::update_scene()
-{
+{   
     auto start = std::chrono::system_clock::now();
 
     _mainCamera.update();
@@ -1603,18 +1649,16 @@ void VulkanEngine::update_scene()
     _sceneData.view = _mainCamera.getViewMatrix();
     _sceneData.view *= cameraBasis;
 
-    glm::mat4 inverse = glm::inverse(_sceneData.view);
-    glm::vec3 front = glm::normalize(glm::vec3(inverse[2]));
-    _sceneData.cameraPos = inverse[3];
+    _sceneData.inverseView = glm::inverse(_sceneData.view);
     _sceneData.lightCutoff = glm::cos(glm::radians(lightCutoffRad)); 
     _sceneData.lightOuterCutoff = glm::cos(glm::radians(lightOuterCutoffRad)); 
-    _sceneData.cameraDir = glm::vec4(glm::normalize(front), 1.0f);
 
     float aspectRatio = (float)_drawExtent.width / (float)_drawExtent.height;
     if (aspectRatio != aspectRatio) return;
     _sceneData.proj = glm::perspective(glm::radians(70.0f), aspectRatio, 10000.0f, 0.001f);
     _sceneData.proj[1][1] *= 1; //might need to change to -1
     _sceneData.viewproj = _sceneData.proj * _sceneData.view;
+    _sceneData.inverseProj = glm::inverse(_sceneData.proj);
 
     for (auto node : _loadedScenes[sceneString]->nodes) {
         ShmemString name(node.first.c_str(), _interprocess->_segment.get_allocator<ShmemString>());
@@ -1623,6 +1667,13 @@ void VulkanEngine::update_scene()
         node.second->worldTransform = transform;
         _instances[_nodeNameToInstanceIndexMap[node.first]].transform = node.second->worldTransform; // move back into first loop when proper change of basis matrix
     } 
+
+    _pcRay.clearColor = glm::vec4(0.0f, 0.0f, 0.5f, 1.0f);  
+    glm::vec3 up = glm::normalize(glm::vec3(_sceneData.inverseView[1]));
+    _pcRay.lightPosition[0]  = glm::translate(glm::mat4(1.0f), up * _sceneData.sunlightDirection[1]) * _sceneData.inverseView[3];
+    _pcRay.lightPosition[1]  = glm::translate(glm::mat4(1.0f), -1.0f * up * _sceneData.sunlightDirection[1]) * _sceneData.inverseView[3];
+    _pcRay.lightIntensity = _sceneData.lightIntensity;
+
     _loadedScenes[sceneString]->Draw(glm::mat4{ 1.0f }, _mainDrawContext);
 
     auto end = std::chrono::system_clock::now();
@@ -1660,12 +1711,16 @@ void VulkanEngine::init_post_process_pipelines()
     layoutBuilder.add_binding(0, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
     layoutBuilder.add_binding(1, VK_DESCRIPTOR_TYPE_SAMPLER);
     layoutBuilder.add_binding(2, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER); 
+    layoutBuilder.add_binding(3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
 
     _postProcessingDescriptorLayout = layoutBuilder.build(_device, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT);
 
+    VkDescriptorSetLayout descSetLayouts[] = {_postProcessingDescriptorLayout};
+    
+
     VkPipelineLayoutCreateInfo post_layout_info = vkinit::pipeline_layout_create_info();
     post_layout_info.setLayoutCount = 1;
-    post_layout_info.pSetLayouts = &_postProcessingDescriptorLayout;
+    post_layout_info.pSetLayouts = descSetLayouts;
 
     VK_CHECK(vkCreatePipelineLayout(_device, &post_layout_info, nullptr, &_postProcessingPipelineLayout)); 
 
@@ -1697,6 +1752,8 @@ void VulkanEngine::init_post_process_pipelines()
 void VulkanEngine::init_ray_tracing()
 {
     create_bottom_level_as();
+    create_rt_pipeline();
+    create_rt_shader_binding_table();
 }
 
 void VulkanEngine::cleanup_ray_tracing()
@@ -2055,6 +2112,155 @@ void VulkanEngine::create_rt_descriptor_set()
     );
     _mainDeletionQueue.push_function([&]() {
         vkDestroyDescriptorSetLayout(_device, _rtDescriptorSetLayout, nullptr);
+    });
+}
+void VulkanEngine::create_rt_pipeline()
+{
+    enum StageIndices
+    {
+        eRaygen,
+        eMiss,
+        eClosestHit,
+        eShaderGroupCount
+    };
+    std::array<VkPipelineShaderStageCreateInfo, eShaderGroupCount> stages{};
+    VkShaderModule rayGenShader;
+    if (!vkutil::load_shader_module("../shaders/raytrace.rgen.spv", _device, &rayGenShader))
+    {
+        std::cout << "Error when building the ray gen shader" << std::endl;
+    }
+    stages[eRaygen] = vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_RAYGEN_BIT_KHR, rayGenShader, "main");
+    VkShaderModule missShader;
+    if (!vkutil::load_shader_module("../shaders/raytrace.rmiss.spv", _device, &missShader))
+    {
+        std::cout << "Error when building the miss shader" << std::endl;
+    }
+    stages[eMiss] = vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_MISS_BIT_KHR, missShader, "main");
+    VkShaderModule closestHitShader;
+    if (!vkutil::load_shader_module("../shaders/raytrace.rchit.spv", _device, &closestHitShader))
+    {
+        std::cout << "Error when building the closest hit shader" << std::endl;
+    }
+    stages[eClosestHit] = vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, closestHitShader, "main");
+
+    VkRayTracingShaderGroupCreateInfoKHR group{};
+    group.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
+    group.anyHitShader = VK_SHADER_UNUSED_KHR;
+    group.closestHitShader = VK_SHADER_UNUSED_KHR;
+    group.generalShader = VK_SHADER_UNUSED_KHR;
+    group.intersectionShader = VK_SHADER_UNUSED_KHR;
+
+    group.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
+    group.generalShader = eRaygen;
+    _rtShaderGroups.push_back(group);
+    group.generalShader = eMiss;
+    _rtShaderGroups.push_back(group);
+
+    group.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
+    group.generalShader = VK_SHADER_UNUSED_KHR;
+    group.closestHitShader = eClosestHit;
+    _rtShaderGroups.push_back(group);
+
+    VkPushConstantRange pushConstant{
+        VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_MISS_BIT_KHR,
+        0, sizeof(PushConstantRay)
+    };
+    std::vector<VkDescriptorSetLayout> rtDescSetLayouts = { _gpuSceneDataDescriptorLayout, _rtDescriptorSetLayout };
+    VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo{};
+    pipelineLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pipelineLayoutCreateInfo.pushConstantRangeCount = 1;
+    pipelineLayoutCreateInfo.pPushConstantRanges = &pushConstant;
+    pipelineLayoutCreateInfo.setLayoutCount = static_cast<uint32_t>(rtDescSetLayouts.size()); 
+    pipelineLayoutCreateInfo.pSetLayouts = rtDescSetLayouts.data();
+    vkCreatePipelineLayout(_device, &pipelineLayoutCreateInfo, nullptr, &_rtPipelineLayout);
+
+    VkRayTracingPipelineCreateInfoKHR rtPipelineInfo{};
+    rtPipelineInfo.sType = VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_KHR;
+    rtPipelineInfo.stageCount = static_cast<uint32_t>(stages.size());
+    rtPipelineInfo.pStages = stages.data();
+    rtPipelineInfo.groupCount = static_cast<uint32_t>(_rtShaderGroups.size());
+    rtPipelineInfo.pGroups = _rtShaderGroups.data();
+    rtPipelineInfo.maxPipelineRayRecursionDepth = 1;
+    rtPipelineInfo.layout = _rtPipelineLayout;
+    vkCreateRayTracingPipelinesKHR(_device, {}, {}, 1, &rtPipelineInfo, nullptr, &_rtPipeline);
+
+    for (auto& s : stages) {
+        vkDestroyShaderModule(_device, s.module, nullptr);
+    }
+
+    _mainDeletionQueue.push_function([&]() {
+        vkDestroyPipeline(_device, _rtPipeline, nullptr);
+        vkDestroyPipelineLayout(_device, _rtPipelineLayout, nullptr);
+    });
+}
+void VulkanEngine::create_rt_shader_binding_table()
+{   
+    uint32_t missCount{1};
+    uint32_t hitCount{1};
+    auto handleCount = 1 + missCount + hitCount; // 1 for the always-1 raygen group
+    uint32_t handleSize = _rtProperties.shaderGroupHandleSize;
+    uint32_t handleSizeAligned = vkutil::align_up(handleSize, _rtProperties.shaderGroupHandleAlignment);
+
+    _rayGenRegion.stride = vkutil::align_up(handleSizeAligned, _rtProperties.shaderGroupBaseAlignment);
+    _rayGenRegion.size = _rayGenRegion.stride; // raygen sbt size must be equal to its stride
+    _missRegion.stride = handleSizeAligned;
+    _missRegion.size = vkutil::align_up(missCount * handleSizeAligned, _rtProperties.shaderGroupBaseAlignment); 
+    _hitRegion.stride = handleSizeAligned;
+    _hitRegion.size = vkutil::align_up(hitCount * handleSizeAligned, _rtProperties.shaderGroupBaseAlignment); 
+
+    uint32_t dataSize = handleCount * handleSize;
+    std::vector<uint8_t> handles(dataSize);
+    VK_CHECK(vkGetRayTracingShaderGroupHandlesKHR(_device, _rtPipeline, 0, handleCount, dataSize, handles.data()));
+
+    VkDeviceSize sbtSize = _rayGenRegion.size + _missRegion.size + _hitRegion.size + _callRegion.size;
+    _rtSBTBuffer = create_buffer(
+        sbtSize,
+        VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+        VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+        VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR,
+        VMA_MEMORY_USAGE_CPU_ONLY
+    );
+
+    VkBufferDeviceAddressInfo info{};
+    info.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
+    info.pNext = nullptr;
+    info.buffer = _rtSBTBuffer.buffer;
+    VkDeviceAddress sbtAddress = vkGetBufferDeviceAddress(_device, &info);
+    _rayGenRegion.deviceAddress = sbtAddress;
+    _missRegion.deviceAddress = sbtAddress + _rayGenRegion.size;
+    _hitRegion.deviceAddress = sbtAddress + _rayGenRegion.size + _missRegion.size;
+
+    auto getHandle = [&](int i) {
+        return handles.data() + i * handleSize;
+    };
+
+    void* pSBTBuffer;
+    vmaMapMemory(_allocator, _rtSBTBuffer.allocation, &pSBTBuffer);
+    uint8_t* pData{nullptr};
+    uint32_t handleIdx{0};
+
+    // Raygen
+    pData = reinterpret_cast<uint8_t*>(pSBTBuffer);
+    memcpy(pData, getHandle(handleIdx++), handleSize);
+
+    // Miss
+    pData = reinterpret_cast<uint8_t*>(pSBTBuffer) + _rayGenRegion.size;
+    for (uint32_t c = 0; c < missCount; c++) {
+        memcpy(pData, getHandle(handleIdx++), handleSize);
+        pData += _missRegion.stride;
+    }
+    
+    // Hit
+    pData = reinterpret_cast<uint8_t*>(pSBTBuffer) + _rayGenRegion.size + _missRegion.size;
+    for (uint32_t c = 0; c < hitCount; c++) {
+        memcpy(pData, getHandle(handleIdx++), handleSize);
+        pData += _hitRegion.stride;
+    }
+
+    vmaUnmapMemory(_allocator, _rtSBTBuffer.allocation);
+
+    _mainDeletionQueue.push_function([&]() {
+        destroy_buffer(_rtSBTBuffer);
     });
 }
 void VulkanEngine::init_interprocess()

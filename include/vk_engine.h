@@ -85,6 +85,8 @@ struct FrameData {
 	VkFence _renderFence;
 	DeletionQueue _deletionQueue;
 	DescriptorAllocatorGrowable _frameDescriptors;
+    VkDescriptorSet _rtDescriptorSet;
+    VkDescriptorSet _globalDescriptor;
 };
 
 struct MeshNode : public Node {
@@ -158,10 +160,14 @@ struct ASBuildData {
 	AllocatedAS as;
 	AllocatedAS cleanupAS;
 };
-
 struct MeshInstance {
 	glm::mat4 transform;
 	uint32_t meshIndex{0};
+};
+struct PushConstantRay {
+    glm::vec4 clearColor;
+    glm::vec3 lightPosition[2];
+    float lightIntensity;
 };
 
 constexpr unsigned int FRAME_OVERLAP = 2;
@@ -284,6 +290,15 @@ public:
 	float lightCutoffRad;
 	float lightOuterCutoffRad;
 	float lightPos[3];
+    std::vector<VkRayTracingShaderGroupCreateInfoKHR> _rtShaderGroups;
+    VkPipelineLayout _rtPipelineLayout;
+    VkPipeline _rtPipeline;
+    PushConstantRay _pcRay{};
+    AllocatedBuffer _rtSBTBuffer;
+    VkStridedDeviceAddressRegionKHR _rayGenRegion{};
+    VkStridedDeviceAddressRegionKHR _missRegion{};
+    VkStridedDeviceAddressRegionKHR _hitRegion{};
+    VkStridedDeviceAddressRegionKHR _callRegion{};
 
 	GUITransform _guiTransform{};
 	std::shared_ptr<Interprocess> _interprocess;
@@ -326,6 +341,9 @@ private:
 	void create_bottom_level_as();
 	VkDescriptorSet create_top_level_as();
 	void create_rt_descriptor_set();
+    void create_rt_pipeline();
+    void create_rt_shader_binding_table();
+
 
 	void init_interprocess();
 
@@ -337,7 +355,7 @@ private:
 	void draw_main(VkCommandBuffer cmd);
 	void draw_imgui(VkCommandBuffer cmd, VkImageView targetImageView);
 	void draw_geometry(VkCommandBuffer cmd);
-
+    void draw_raytrace(VkCommandBuffer cmd);
 
 	void update_scene();
 
@@ -346,4 +364,8 @@ private:
 namespace vkutil {
 	bool is_visible(const RenderObject& obj, const glm::mat4& viewProj);
 	VkTransformMatrixKHR toTransformMatrixKHR(const glm::mat4& matrix);
+    constexpr uint32_t align_up(uint32_t toAlign, size_t size) noexcept
+    {
+        return ((toAlign + (size - 1)) & ~(size - 1));
+    }
 }

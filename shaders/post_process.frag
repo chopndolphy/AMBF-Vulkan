@@ -1,4 +1,5 @@
 #version 460
+#extension GL_EXT_ray_tracing : require
 
  layout(location = 0) in INTERFACE {
 	vec2 uv; ///< UV coordinates.
@@ -10,6 +11,8 @@ layout(set = 0, binding = 1) uniform sampler sClampLinear;
 layout(set = 0, binding = 2) uniform UniformBlock {
 	vec2 inverseScreenSize; ///< Size of one-pixel in UV space.
 };
+    
+layout(set = 0, binding = 3) uniform sampler2D image;
 
 // Settings for FXAA.
 #define EDGE_THRESHOLD_MIN 0.0312
@@ -28,7 +31,8 @@ float rgb2luma(vec3 rgb){
 /** Performs FXAA post-process anti-aliasing as described in the Nvidia FXAA white paper and the associated shader code.
 */
 void main(){
-
+	fragColor = vec3(texture(image, In.uv).rgb);
+    return;
 	vec3 colorCenter = texture(sampler2D(screenTexture, sClampLinear), In.uv).rgb;
 	
 	// Luma at the current fragment
@@ -218,5 +222,5 @@ void main(){
 	// Read the color at the new UV coordinates, and use it.
 	vec3 finalColor = textureLod(sampler2D(screenTexture, sClampLinear), finalUv, 0.0).rgb;
 	fragColor = finalColor;
-	
 }
+/* vim: set filetype=glsl : */
