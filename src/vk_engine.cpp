@@ -23,6 +23,7 @@
 
 
 #include <chrono>
+#include <cstdlib>
 #include <thread>
 #include <array>
 #include <iostream>
@@ -41,7 +42,7 @@ constexpr bool bUseValidationLayers = false;
 constexpr bool bUseValidationLayers = true;
 #endif
 
-const std::string sceneString = "src_sample_assets_01.glb";
+const std::string kDefaultScenePath = "../assets/src_sample_assets_01.glb";
 
 VulkanEngine& VulkanEngine::Get() { return *loadedEngine; } 
 
@@ -54,8 +55,10 @@ static void check_vk_result(VkResult err)
         abort();
 }
 
-void VulkanEngine::init()
+void VulkanEngine::init(const std::string& scenePath)
 {
+    _scenePath = scenePath.empty() ? kDefaultScenePath : scenePath;
+
     volkInitialize();
     // only one engine initialization is allowed with the application.
     assert(loadedEngine == nullptr);
@@ -1131,12 +1134,14 @@ void VulkanEngine::init_default_data()
 
 void VulkanEngine::init_renderables()
 {
-    std::string scenePath = { "../assets/" + sceneString };
-    auto sceneFile = vkutil::load_gltf(this, scenePath);
+    auto sceneFile = vkutil::load_gltf(this, _scenePath);
 
-    assert(sceneFile.has_value());
+    if (!sceneFile.has_value()) {
+        fprintf(stderr, "Failed to load scene: %s\n", _scenePath.c_str());
+        std::exit(EXIT_FAILURE);
+    }
 
-    _loadedScenes[sceneString] = *sceneFile;
+    _loadedScenes[_scenePath] = *sceneFile;
 }
 
 void VulkanEngine::create_swapchain(uint32_t width, uint32_t height)
@@ -1616,14 +1621,14 @@ void VulkanEngine::update_scene()
     _sceneData.proj[1][1] *= 1; //might need to change to -1
     _sceneData.viewproj = _sceneData.proj * _sceneData.view;
 
-    for (auto node : _loadedScenes[sceneString]->nodes) {
+    for (auto node : _loadedScenes[_scenePath]->nodes) {
         ShmemString name(node.first.c_str(), _interprocess->_segment.get_allocator<ShmemString>());
         Transform trans = _interprocess->_map->at(name);
         glm::mat4 transform = glm::make_mat4(trans.array);
         node.second->worldTransform = transform;
         _instances[_nodeNameToInstanceIndexMap[node.first]].transform = node.second->worldTransform; // move back into first loop when proper change of basis matrix
     } 
-    _loadedScenes[sceneString]->Draw(glm::mat4{ 1.0f }, _mainDrawContext);
+    _loadedScenes[_scenePath]->Draw(glm::mat4{ 1.0f }, _mainDrawContext);
 
     auto end = std::chrono::system_clock::now();
 
@@ -1747,9 +1752,9 @@ BLASInput VulkanEngine::mesh_to_vk_geometry(const MeshAsset &mesh)
 void VulkanEngine::create_bottom_level_as()
 {
     std::vector<BLASInput> inputs;
-    inputs.reserve(_loadedScenes[sceneString]->meshes.size());
+    inputs.reserve(_loadedScenes[_scenePath]->meshes.size());
     std::unordered_map<std::string, uint32_t> nameIndexMap;
-    for (const auto& mesh : _loadedScenes[sceneString]->meshes) {
+    for (const auto& mesh : _loadedScenes[_scenePath]->meshes) {
         BLASInput blas = mesh_to_vk_geometry(*mesh.second);
         //only one geometry per blas for now
         nameIndexMap[mesh.first] = inputs.size();
@@ -1900,7 +1905,7 @@ void VulkanEngine::create_bottom_level_as()
     for (uint32_t i = 0; i < asBuilds.size(); i++) {
         _blas.emplace_back(asBuilds[i].as);
     }
-    for (auto node : _loadedScenes[sceneString]->meshNodes) {
+    for (auto node : _loadedScenes[_scenePath]->meshNodes) {
         MeshNode* meshNode = static_cast<MeshNode*>(node.second.get());
         MeshInstance instance;
         instance.meshIndex = nameIndexMap[meshNode->mesh->name];
@@ -2059,7 +2064,7 @@ void VulkanEngine::create_rt_descriptor_set()
 }
 void VulkanEngine::init_interprocess()
 {
-    _interprocess = std::make_shared<Interprocess>(_loadedScenes[sceneString]->nodes);
+    _interprocess = std::make_shared<Interprocess>(_loadedScenes[_scenePath]->nodes);
 }
 
 void GLTFMetallic_Roughness::build_pipelines(VulkanEngine* engine)

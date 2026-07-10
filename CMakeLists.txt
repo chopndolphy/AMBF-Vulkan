@@ -83,3 +83,36 @@ target_link_libraries(FIRE3D PUBLIC ${XRANDR})
 find_library(DL dl)
 target_link_libraries(FIRE3D PUBLIC ${DL})
 
+################################################################################################################################
+## SHADER COMPILATION
+## Compiles every GLSL shader to SPIR-V automatically as part of the build,
+## so no manual glslc invocations are needed.
+################################################################################################################################
+
+# glslc ships with the Vulkan SDK; also check VULKAN_SDK/bin as a fallback.
+find_program(GLSLC glslc HINTS $ENV{VULKAN_SDK}/bin)
+if(NOT GLSLC)
+    message(FATAL_ERROR "glslc not found. Install the Vulkan SDK (it provides glslc) or add it to your PATH.")
+endif()
+
+set(SHADER_DIR ${CMAKE_CURRENT_SOURCE_DIR}/shaders)
+file(GLOB SHADER_SOURCES ${SHADER_DIR}/*.vert ${SHADER_DIR}/*.frag ${SHADER_DIR}/*.comp)
+# .glsl files are shared includes, not standalone shaders — recompile if they change.
+file(GLOB SHADER_INCLUDES ${SHADER_DIR}/*.glsl)
+
+set(SPV_OUTPUTS)
+foreach(SHADER ${SHADER_SOURCES})
+    set(SPV ${SHADER}.spv)
+    add_custom_command(
+        OUTPUT ${SPV}
+        COMMAND ${GLSLC} ${SHADER} --target-env=vulkan1.3 -O -o ${SPV}
+        DEPENDS ${SHADER} ${SHADER_INCLUDES}
+        COMMENT "Compiling shader ${SHADER}"
+        VERBATIM
+    )
+    list(APPEND SPV_OUTPUTS ${SPV})
+endforeach()
+
+add_custom_target(shaders ALL DEPENDS ${SPV_OUTPUTS})
+add_dependencies(FIRE3D shaders)
+

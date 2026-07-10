@@ -53,8 +53,48 @@ This was my deepest dive into low-level graphics: managing GPU memory and synchr
 
 > **Platform:** Linux (developed and tested on Ubuntu 22.04, X11). Requires a Vulkan 1.3-capable GPU; ray-traced shadows require ray-tracing hardware support.
 
+**Quick start** — from the project root:
+
+```bash
+./setup.sh
+```
+
+That single script installs the prerequisites (Vulkan SDK + SDL2, skipping anything already present) and builds the engine. It's idempotent, so it's safe to re-run. Then grab some assets (below) and run.
+
 <details>
-<summary><b>1. Install Vulkan SDK</b></summary>
+<summary><b>Get sample assets</b></summary>
+
+Download glTF assets from the [sample assets repo](https://github.com/FIRE-3DV-repositories/src_sample_assets/tree/main/glTF) and place them in a new `assets/` folder in the project root. (`setup.sh` reminds you of this if the folder is missing.)
+</details>
+
+<details open>
+<summary><b>Run</b></summary>
+
+From the `build/` directory. With no argument, the default sample scene loads; pass a path to a `.gltf`/`.glb` file to render your own (relative paths are resolved from `build/`):
+
+```bash
+cd build
+./FIRE3D                          # default sample scene
+./FIRE3D ../assets/my_scene.glb   # a specific glTF/glb file
+```
+</details>
+
+<details>
+<summary><b>Build manually</b> (instead of <code>setup.sh</code>)</summary>
+
+Shaders are compiled to SPIR-V automatically during the build (via `glslc`, which ships with the Vulkan SDK) — no manual `glslc` invocations needed. From the project root:
+
+```bash
+mkdir build && cd build
+cmake ..
+make
+```
+</details>
+
+<details id="manual-setup">
+<summary><b>Manual setup</b> (what <code>setup.sh</code> automates)</summary>
+
+**Vulkan SDK** (replace `jammy` with your Ubuntu codename):
 
 ```bash
 wget -qO- https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo tee /etc/apt/trusted.gpg.d/lunarg.asc
@@ -69,47 +109,11 @@ Verify it works:
 vkcube
 vulkaninfo --summary
 ```
-</details>
 
-<details>
-<summary><b>2. Install SDL2</b></summary>
+**SDL2:**
 
 ```bash
 sudo apt-get install libsdl2-dev
-```
-</details>
-
-<details>
-<summary><b>3. Get sample assets</b></summary>
-
-Download glTF assets from the [sample assets repo](https://github.com/FIRE-3DV-repositories/src_sample_assets/tree/main/glTF) and place them in a new `assets/` folder in the project root.
-</details>
-
-<details>
-<summary><b>4. Compile shaders</b></summary>
-
-Install `glslc` ([download](https://github.com/google/shaderc/blob/main/downloads.md)) to `/usr/local/bin`, then from the `build/` directory:
-
-```bash
-glslc ../shaders/gradient_color.comp --target-env=vulkan1.3 -O -o ../shaders/gradient_color.comp.spv
-glslc ../shaders/sky.comp            --target-env=vulkan1.3 -O -o ../shaders/sky.comp.spv
-glslc ../shaders/pbr.frag            --target-env=vulkan1.3 -O -o ../shaders/pbr.frag.spv
-glslc ../shaders/pbr.vert            --target-env=vulkan1.3 -O -o ../shaders/pbr.vert.spv
-glslc ../shaders/post_process.vert   --target-env=vulkan1.3 -O -o ../shaders/post_process.vert.spv
-glslc ../shaders/post_process.frag   --target-env=vulkan1.3 -O -o ../shaders/post_process.frag.spv
-```
-</details>
-
-<details>
-<summary><b>5. Build & run</b></summary>
-
-From the project root:
-
-```bash
-mkdir build && cd build
-cmake ..
-make
-./FIRE3D
 ```
 </details>
 

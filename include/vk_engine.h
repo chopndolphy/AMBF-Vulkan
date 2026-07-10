@@ -181,8 +181,9 @@ public:
 
 	FrameData& get_current_frame() { return _frames[_frameNumber % FRAME_OVERLAP]; };
  
-	//initializes everything in the engine
-	void init(); 
+	//initializes everything in the engine; scenePath selects the glTF/glb to
+	//load (falls back to the default sample scene when empty)
+	void init(const std::string& scenePath = "");
 	//shuts down the engine
 	void cleanup(); 
 	//draw loop
@@ -269,6 +270,9 @@ public:
 	Camera _mainCamera;
 
 	std::unordered_map<std::string, std::shared_ptr<LoadedGLTF>> _loadedScenes;
+
+	// Path to the glTF/glb scene to render; also the key into _loadedScenes.
+	std::string _scenePath;
 
 	EngineStats _stats;
 

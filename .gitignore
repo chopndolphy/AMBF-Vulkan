@@ -44,3 +44,6 @@ build/
 
 imgui.ini
 */build/
+
+# Local-only portfolio scratch list
+TODO.md
